@@ -1,0 +1,78 @@
+export interface TrackPoint {
+  lat: number;
+  lon: number;
+  ele?: number;
+  time?: string;
+}
+
+export interface GPXTrack {
+  name: string;
+  points: TrackPoint[];
+  distance: number;
+  elevationGain: number;
+  elevationLoss: number;
+}
+
+export const parseGPX = (gpxContent: string): GPXTrack => {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(gpxContent, "text/xml");
+  
+  const trackName = xmlDoc.querySelector("trk name")?.textContent || "Unnamed Track";
+  const trackPoints = xmlDoc.querySelectorAll("trkpt");
+  
+  const points: TrackPoint[] = [];
+  trackPoints.forEach((point) => {
+    const lat = parseFloat(point.getAttribute("lat") || "0");
+    const lon = parseFloat(point.getAttribute("lon") || "0");
+    const ele = point.querySelector("ele")?.textContent;
+    const time = point.querySelector("time")?.textContent;
+    
+    points.push({
+      lat,
+      lon,
+      ele: ele ? parseFloat(ele) : undefined,
+      time: time || undefined,
+    });
+  });
+  
+  // Calculate distance and elevation
+  let distance = 0;
+  let elevationGain = 0;
+  let elevationLoss = 0;
+  
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    
+    // Calculate distance using Haversine formula
+    const R = 6371000; // Earth's radius in meters
+    const φ1 = (prev.lat * Math.PI) / 180;
+    const φ2 = (curr.lat * Math.PI) / 180;
+    const Δφ = ((curr.lat - prev.lat) * Math.PI) / 180;
+    const Δλ = ((curr.lon - prev.lon) * Math.PI) / 180;
+    
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    distance += R * c;
+    
+    // Calculate elevation change
+    if (prev.ele !== undefined && curr.ele !== undefined) {
+      const elevDiff = curr.ele - prev.ele;
+      if (elevDiff > 0) {
+        elevationGain += elevDiff;
+      } else {
+        elevationLoss += Math.abs(elevDiff);
+      }
+    }
+  }
+  
+  return {
+    name: trackName,
+    points,
+    distance: Math.round(distance / 1000 * 100) / 100, // Convert to km
+    elevationGain: Math.round(elevationGain),
+    elevationLoss: Math.round(elevationLoss),
+  };
+};
