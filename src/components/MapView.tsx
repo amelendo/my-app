@@ -1,3 +1,4 @@
+import { computeRemaining } from "@/utils/progression";
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -19,8 +20,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   const watchId = useRef<number | null>(null);
   const [isTracking, setIsTracking] = useState(false);
-  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
-  const [pace, setPace] = useState<string>("–:–"); // Allure au km
 
   /* ---------------- MAP ---------------- */
 
@@ -64,12 +63,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       });
 
       const bounds = coordinates.reduce(
-        (b, c) =>
-          b.extend(c as [number, number]),
-        new mapboxgl.LngLatBounds(
-          coordinates[0] as [number, number],
-          coordinates[0] as [number, number]
-        )
+        (b, c) => b.extend(c as [number, number]),
+        new mapboxgl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number])
       );
 
       map.current.fitBounds(bounds, { padding: 50, duration: 0 });
@@ -81,15 +76,13 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     };
   }, [track]);
 
-  /* ---------------- GPS & TRACKING ---------------- */
+  /* ---------------- GPS ---------------- */
 
   const handlePosition = (pos: GeolocationPosition) => {
     const { latitude, longitude } = pos.coords;
-    const time = pos.timestamp;
 
     if (!map.current) return;
 
-    // Marqueur utilisateur
     if (!userMarker.current) {
       const el = document.createElement("div");
       el.style.width = "18px";
@@ -105,25 +98,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       userMarker.current.setLngLat([longitude, latitude]);
     }
 
-    // Déplacement de la vue
+    // FORCE VISIBILITY
     map.current.jumpTo({ center: [longitude, latitude] });
-
-    // Mise à jour du chemin
-    setUserPath((prev) => {
-      const newPath = [...prev, { lat: latitude, lon: longitude, time }];
-      // Calcul de l'allure si au moins 2 points
-      if (newPath.length >= 2) {
-        const last = newPath[newPath.length - 1];
-        const prevPoint = newPath[newPath.length - 2];
-
-        const dist = getDistanceKm(prevPoint, last);
-        const timeDiff = (last.time! - prevPoint.time!) / 1000; // secondes
-
-        const paceSecPerKm = dist > 0 ? timeDiff / dist : 0;
-        setPace(formatPace(paceSecPerKm));
-      }
-      return newPath;
-    });
   };
 
   const handleError = (err: GeolocationPositionError) => {
@@ -145,7 +121,11 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     watchId.current = navigator.geolocation.watchPosition(
       handlePosition,
       handleError,
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
+      {
+        enableHighAccuracy: false,
+        timeout: 20000,
+        maximumAge: 10000,
+      }
     );
   };
 
@@ -156,30 +136,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     }
     setIsTracking(false);
   };
-
-  /* ---------------- HELPERS ---------------- */
-
-  function getDistanceKm(p1: TrackPoint, p2: TrackPoint) {
-    const R = 6371; // km
-    const φ1 = (p1.lat * Math.PI) / 180;
-    const φ2 = (p2.lat * Math.PI) / 180;
-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // km
-  }
-
-  function formatPace(secPerKm: number) {
-    if (secPerKm <= 0) return "–:–";
-    const m = Math.floor(secPerKm / 60);
-    const s = Math.round(secPerKm % 60);
-    return `${m}:${s.toString().padStart(2, "0")} / km`;
-  }
 
   /* ---------------- UI ---------------- */
 
@@ -200,13 +156,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
               <Navigation className="h-4 w-4 mr-2" />
               {isTracking ? "Stop Tracking" : "Start Tracking"}
             </Button>
-
-            {/* Allure instantanée */}
-            {isTracking && (
-              <div className="mt-3 text-sm">
-                <p>Allure actuelle : <b>{pace}</b></p>
-              </div>
-            )}
           </Card>
         </div>
       </div>
