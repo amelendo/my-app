@@ -20,9 +20,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   const [isTracking, setIsTracking] = useState(false);
   const [userPath, setUserPath] = useState<TrackPoint[]>([]);
-  const [pace, setPace] = useState<string>("–:–");
-  const [distance, setDistance] = useState<number>(0);
-  const [elevation, setElevation] = useState<number>(0);
+  const [pace, setPace] = useState<string>("–:–"); // allure au km
 
   /* ---------------- MAP ---------------- */
   useEffect(() => {
@@ -63,7 +61,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       );
       map.current.fitBounds(bounds, { padding: 50, duration: 0 });
 
-      // User path
+      // User path (tracé en temps réel)
       map.current.addSource("userPath", {
         type: "geojson",
         data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
@@ -84,12 +82,12 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   /* ---------------- GPS & TRACKING ---------------- */
   const handlePosition = (pos: GeolocationPosition) => {
-    const { latitude, longitude, altitude } = pos.coords;
+    const { latitude, longitude } = pos.coords;
     const time = pos.timestamp;
 
     if (!map.current) return;
 
-    // Marqueur utilisateur — copie exacte de ta version initiale
+    // Marqueur utilisateur
     if (!userMarker.current) {
       const el = document.createElement("div");
       el.style.width = "18px";
@@ -97,6 +95,19 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       el.style.borderRadius = "50%";
       el.style.background = "hsl(215, 85%, 45%)";
       el.style.border = "3px solid white";
+      el.style.boxShadow = "0 0 8px hsl(215, 85%, 45%)";
+      el.style.animation = "pulse 1s infinite";
+
+      // Animation CSS pour pulser
+      const styleSheet = document.styleSheets[0];
+      styleSheet.insertRule(`
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 0.7; }
+          50% { transform: scale(1.5); opacity: 0.4; }
+          100% { transform: scale(1); opacity: 0.7; }
+        }
+      `);
+
       userMarker.current = new mapboxgl.Marker(el)
         .setLngLat([longitude, latitude])
         .addTo(map.current);
@@ -107,26 +118,21 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     // Centrer la vue
     map.current.jumpTo({ center: [longitude, latitude] });
 
-    // Mettre à jour chemin
+    // Mise à jour du chemin
     setUserPath((prev) => {
-      const newPath = [...prev, { lat: latitude, lon: longitude, ele: altitude ?? 0, time }];
+      const newPath = [...prev, { lat: latitude, lon: longitude, time }];
+
       const coords = newPath.map((p) => [p.lon, p.lat]);
       const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
       if (source) source.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
 
-      // Distance cumulée
+      // Calcul allure
       if (newPath.length >= 2) {
         const last = newPath[newPath.length - 1];
         const prevPoint = newPath[newPath.length - 2];
-        const d = getDistanceKm(prevPoint, last);
-        setDistance((prev) => prev + d);
-
-        // Dénivelé
-        if (last.ele && prevPoint.ele) setElevation((prev) => prev + Math.max(0, last.ele - prevPoint.ele));
-
-        // Allure instantanée
+        const dist = getDistanceKm(prevPoint, last);
         const timeDiff = (last.time! - prevPoint.time!) / 1000;
-        const paceSecPerKm = d > 0 ? timeDiff / d : 0;
+        const paceSecPerKm = dist > 0 ? timeDiff / dist : 0;
         setPace(formatPace(paceSecPerKm));
       }
 
@@ -196,8 +202,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
             {isTracking && (
               <div className="mt-3 text-sm">
                 <p>Allure actuelle : <b>{pace}</b></p>
-                <p>Distance parcourue : <b>{distance.toFixed(2)} km</b></p>
-                <p>Dénivelé positif : <b>{Math.round(elevation)} m</b></p>
               </div>
             )}
           </Card>
