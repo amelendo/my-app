@@ -8,7 +8,6 @@ import { Navigation } from "lucide-react";
 import { toast } from "sonner";
 import { exportToGpx } from "@/utils/exportGpx";
 
-
 interface MapViewProps {
   track: TrackPoint[];
   trackName: string;
@@ -23,9 +22,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   const [isTracking, setIsTracking] = useState(false);
   const [userPath, setUserPath] = useState<TrackPoint[]>([]);
 
-  const [pace, setPace] = useState("–:–");
   const [distanceDone, setDistanceDone] = useState(0); // km
   const [elevationDone, setElevationDone] = useState(0); // m
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [avgSpeed, setAvgSpeed] = useState(0); // km/h
 
   /* ---------------- MAP INIT ---------------- */
 
@@ -68,7 +68,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         },
       });
 
-      // --- User Path Source ---
+      // --- User Path ---
       map.current.addSource("userPath", {
         type: "geojson",
         data: {
@@ -88,7 +88,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         },
       });
 
-      // Fit bounds to GPX
+      // Fit bounds GPX
       const bounds = coordinates.reduce(
         (b, c) => b.extend(c as [number, number]),
         new mapboxgl.LngLatBounds(
@@ -131,8 +131,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       userMarker.current.setLngLat([longitude, latitude]);
     }
 
-    // Center map on user
-    map.current.jumpTo({ center: [longitude, latitude] });
+    // recentre la carte en douceur
+    map.current.easeTo({ center: [longitude, latitude], duration: 300 });
 
     // --- Update user path ---
     setUserPath((prev) => {
@@ -140,40 +140,50 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         lat: latitude,
         lon: longitude,
         ele: altitude ?? undefined,
-        time: time.toString(),
+        time: time,
       };
 
       const newPath = [...prev, newPoint];
 
-      // Draw user path line
-      const coords = newPath.map((p) => [p.lon, p.lat]);
-      const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
+      // draw line
+      const source = map.current?.getSource("userPath") as
+        | mapboxgl.GeoJSONSource
+        | undefined;
+
       if (source) {
+        const coords = newPath.map((p) => [p.lon, p.lat]);
         source.setData({
           type: "Feature",
           geometry: { type: "LineString", coordinates: coords },
         });
       }
 
-      // --- Compute stats ---
+      // --- Stats ---
       if (newPath.length >= 2) {
         const last = newPath[newPath.length - 1];
         const prevPoint = newPath[newPath.length - 2];
 
-        // Distance
+        // Distance incrementale
         const dist = getDistanceKm(prevPoint, last);
-        setDistanceDone((d) => d + dist);
+        setDistanceDone((d) => {
+          const newDist = d + dist;
+
+          // Average speed
+          if (startTime) {
+            const elapsedHours = (Date.now() - startTime) / 1000 / 3600;
+            if (elapsedHours > 0) {
+              setAvgSpeed(newDist / elapsedHours);
+            }
+          }
+
+          return newDist;
+        });
 
         // Elevation gain
         if (last.ele !== undefined && prevPoint.ele !== undefined) {
           const diff = last.ele - prevPoint.ele;
           if (diff > 0) setElevationDone((e) => e + diff);
         }
-
-        // Pace
-        const timeDiff = (Number(last.time) - Number(prevPoint.time)) / 1000;
-        const paceSecPerKm = dist > 0 ? timeDiff / dist : 0;
-        setPace(formatPace(paceSecPerKm));
       }
 
       return newPath;
@@ -190,6 +200,13 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       toast.error("Geolocation not supported");
       return;
     }
+
+    // reset stats
+    setUserPath([]);
+    setDistanceDone(0);
+    setElevationDone(0);
+    setAvgSpeed(0);
+    setStartTime(Date.now());
 
     setIsTracking(true);
 
@@ -226,17 +243,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
-  
-  
-  
-  
-
-  function formatPace(secPerKm: number) {
-    if (secPerKm <= 0) return "–:–";
-    const m = Math.floor(secPerKm / 60);
-    const s = Math.round(secPerKm % 60);
-    return `${m}:${s.toString().padStart(2, "0")} / km`;
-  }
 
   /* ---------------- UI ---------------- */
 
@@ -261,10 +267,29 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
             {isTracking && (
               <div className="mt-3 text-sm space-y-1">
-                <p>Allure : <b>{pace}</b></p>
-                <p>Distance : <b>{distanceDone.toFixed(2)} km</b></p>
-                <p>Dénivelé + : <b>{Math.round(elevationDone)} m</b></p>
+                <p>
+                  Distance : <b>{distanceDone.toFixed(2)} km</b>
+                </p>
+                <p>
+                  Dénivelé + : <b>{Math.round(elevationDone)} m</b>
+                </p>
+                <p>
+                  Vitesse moyenne : <b>{avgSpeed.toFixed(1)} km/h</b>
+                </p>
               </div>
+            )}
+
+            {!isTracking && userPath.length > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full mt-2"
+                onClick={() =>
+                  exportToGpx(userPath, trackName + "_run")
+                }
+              >
+                Exporter GPX
+              </Button>
             )}
           </Card>
         </div>
