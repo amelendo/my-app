@@ -20,12 +20,13 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   const watchId = useRef<number | null>(null);
 
   const [isTracking, setIsTracking] = useState(false);
-  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+  const [sportMode, setSportMode] = useState(false);
 
-  const [distanceDone, setDistanceDone] = useState(0); // km
-  const [elevationDone, setElevationDone] = useState(0); // m
+  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+  const [distanceDone, setDistanceDone] = useState(0);
+  const [elevationDone, setElevationDone] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [avgSpeed, setAvgSpeed] = useState(0); // km/h
+  const [avgSpeed, setAvgSpeed] = useState(0);
 
   /* ---------------- MAP INIT ---------------- */
 
@@ -47,7 +48,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     map.current.on("load", () => {
       if (!map.current) return;
 
-      // --- GPX Track ---
       const coordinates = track.map((p) => [p.lon, p.lat]);
 
       map.current.addSource("route", {
@@ -68,7 +68,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         },
       });
 
-      // --- User Path ---
       map.current.addSource("userPath", {
         type: "geojson",
         data: {
@@ -88,7 +87,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         },
       });
 
-      // Fit bounds GPX
       const bounds = coordinates.reduce(
         (b, c) => b.extend(c as [number, number]),
         new mapboxgl.LngLatBounds(
@@ -114,7 +112,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
     if (!map.current) return;
 
-    // --- User Marker ---
     if (!userMarker.current) {
       const el = document.createElement("div");
       el.style.width = "18px";
@@ -131,10 +128,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       userMarker.current.setLngLat([longitude, latitude]);
     }
 
-    // recentre la carte en douceur
     map.current.easeTo({ center: [longitude, latitude], duration: 300 });
 
-    // --- Update user path ---
     setUserPath((prev) => {
       const newPoint: TrackPoint = {
         lat: latitude,
@@ -145,11 +140,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
       const newPath = [...prev, newPoint];
 
-      // draw line
-      const source = map.current?.getSource("userPath") as
-        | mapboxgl.GeoJSONSource
-        | undefined;
-
+      const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
       if (source) {
         const coords = newPath.map((p) => [p.lon, p.lat]);
         source.setData({
@@ -158,28 +149,20 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         });
       }
 
-      // --- Stats ---
       if (newPath.length >= 2) {
         const last = newPath[newPath.length - 1];
         const prevPoint = newPath[newPath.length - 2];
 
-        // Distance incrementale
         const dist = getDistanceKm(prevPoint, last);
         setDistanceDone((d) => {
           const newDist = d + dist;
-
-          // Average speed
           if (startTime) {
             const elapsedHours = (Date.now() - startTime) / 1000 / 3600;
-            if (elapsedHours > 0) {
-              setAvgSpeed(newDist / elapsedHours);
-            }
+            if (elapsedHours > 0) setAvgSpeed(newDist / elapsedHours);
           }
-
           return newDist;
         });
 
-        // Elevation gain
         if (last.ele !== undefined && prevPoint.ele !== undefined) {
           const diff = last.ele - prevPoint.ele;
           if (diff > 0) setElevationDone((e) => e + diff);
@@ -196,12 +179,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   };
 
   const startTracking = () => {
-    if (!navigator.geolocation) {
-      toast.error("Geolocation not supported");
-      return;
-    }
+    if (!navigator.geolocation) return toast.error("Geolocation not supported");
 
-    // reset stats
     setUserPath([]);
     setDistanceDone(0);
     setElevationDone(0);
@@ -213,11 +192,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     watchId.current = navigator.geolocation.watchPosition(
       handlePosition,
       handleError,
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   };
 
@@ -227,21 +202,16 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     setIsTracking(false);
   };
 
-  /* ---------------- HELPERS ---------------- */
-
   function getDistanceKm(p1: TrackPoint, p2: TrackPoint) {
     const R = 6371;
     const φ1 = (p1.lat * Math.PI) / 180;
     const φ2 = (p2.lat * Math.PI) / 180;
     const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
     const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
-
     const a =
       Math.sin(Δφ / 2) ** 2 +
       Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
   }
 
   /* ---------------- UI ---------------- */
@@ -251,48 +221,89 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       <div className="relative h-[600px]">
         <div ref={mapContainer} className="absolute inset-0" />
 
-        <div className="absolute top-4 left-4 z-10">
-          <Card className="p-3 bg-card/95">
-            <h3 className="font-semibold text-sm mb-2">{trackName}</h3>
+        {/* ------ NORMAL UI ------ */}
+        {!sportMode && (
+          <div className="absolute top-4 left-4 z-10">
+            <Card className="p-3 bg-card/95 space-y-2">
+              <h3 className="font-semibold text-sm">{trackName}</h3>
 
-            <Button
-              size="sm"
-              onClick={isTracking ? stopTracking : startTracking}
-              variant={isTracking ? "destructive" : "default"}
-              className="w-full"
-            >
-              <Navigation className="h-4 w-4 mr-2" />
-              {isTracking ? "Stop Tracking" : "Start Tracking"}
-            </Button>
+              <Button
+                size="sm"
+                onClick={isTracking ? stopTracking : startTracking}
+                variant={isTracking ? "destructive" : "default"}
+                className="w-full"
+              >
+                <Navigation className="h-4 w-4 mr-2" />
+                {isTracking ? "Stop Tracking" : "Start Tracking"}
+              </Button>
 
-            {isTracking && (
-              <div className="mt-3 text-sm space-y-1">
-                <p>
-                  Distance : <b>{distanceDone.toFixed(2)} km</b>
-                </p>
-                <p>
-                  Dénivelé + : <b>{Math.round(elevationDone)} m</b>
-                </p>
-                <p>
-                  Vitesse moyenne : <b>{avgSpeed.toFixed(1)} km/h</b>
-                </p>
-              </div>
-            )}
-
-            {!isTracking && userPath.length > 0 && (
               <Button
                 size="sm"
                 variant="secondary"
-                className="w-full mt-2"
-                onClick={() =>
-                  exportToGpx(userPath, trackName + "_run")
-                }
+                className="w-full"
+                onClick={() => setSportMode(true)}
               >
-                Exporter GPX
+                Mode Sport
               </Button>
-            )}
-          </Card>
-        </div>
+
+              {isTracking && (
+                <div className="text-sm space-y-1">
+                  <p>Distance : <b>{distanceDone.toFixed(2)} km</b></p>
+                  <p>Dénivelé + : <b>{Math.round(elevationDone)} m</b></p>
+                  <p>Vitesse moy : <b>{avgSpeed.toFixed(1)} km/h</b></p>
+                </div>
+              )}
+
+              {!isTracking && userPath.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => exportToGpx(userPath, trackName + "_run")}
+                >
+                  Exporter GPX
+                </Button>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* ------ SPORT MODE UI ------ */}
+        {sportMode && (
+          <div className="absolute inset-0 z-20 bg-black/50 flex flex-col justify-between p-6 text-white">
+
+            <div className="text-center space-y-6 mt-6">
+              <div className="text-5xl font-bold">
+                {distanceDone.toFixed(2)} km
+              </div>
+              <div className="text-3xl">
+                +{Math.round(elevationDone)} m
+              </div>
+              <div className="text-3xl">
+                {avgSpeed.toFixed(1)} km/h
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 mb-6 items-center">
+              <Button
+                size="lg"
+                className="text-xl px-10 py-6"
+                onClick={isTracking ? stopTracking : startTracking}
+                variant={isTracking ? "destructive" : "default"}
+              >
+                {isTracking ? "STOP" : "START"}
+              </Button>
+
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setSportMode(false)}
+              >
+                Quitter mode sport
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   );
