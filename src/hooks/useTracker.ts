@@ -41,26 +41,42 @@ export function useTracker() {
     return data ? JSON.parse(data) : [];
   };
 
-  /* ------------------- WAKE LOCK ------------------- */
+ 
+    /* ------------------- WAKE LOCK ------------------- */
   const requestWakeLock = async () => {
     try {
-      if ("wakeLock" in navigator) {
+      // Vérifie que l'API existe et est accessible
+      if ("wakeLock" in navigator && typeof (navigator as any).wakeLock.request === "function") {
         wakeLock.current = await (navigator as any).wakeLock.request("screen");
-        wakeLock.current.addEventListener("release", () =>
-          console.log("🔓 Wake lock released")
-        );
+
+        // Log propre quand le verrouillage est libéré
+        wakeLock.current.addEventListener("release", () => {
+          console.log("🔓 Wake Lock libéré (l'écran peut s'éteindre)");
+        });
+
+        console.log("✅ Wake Lock activé : l'écran restera allumé");
+      } else {
+        console.warn("⚠️ Wake Lock non supporté sur ce navigateur.");
       }
     } catch (err) {
-      console.error("❌ Cannot obtain wake lock:", err);
+      console.warn("⚠️ Impossible d'activer le Wake Lock :", err);
+      // Option : informer l'utilisateur sans casser le flux
+       toast.info("Le maintien de l’écran éveillé n’est pas supporté sur ce navigateur mobile.");
     }
   };
 
   const releaseWakeLock = async () => {
-    if (wakeLock.current) {
-      await wakeLock.current.release();
-      wakeLock.current = null;
+    try {
+      if (wakeLock.current) {
+        await wakeLock.current.release();
+        wakeLock.current = null;
+        console.log("🔓 Wake Lock désactivé manuellement");
+      }
+    } catch (err) {
+      console.warn("⚠️ Erreur lors de la libération du Wake Lock :", err);
     }
   };
+
 
   /* ------------------- GPS ------------------- */
   const handlePosition = (pos: GeolocationPosition) => {
