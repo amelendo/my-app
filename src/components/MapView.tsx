@@ -35,6 +35,24 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     loadPath,
   } = useTracker();
 
+// 🧠 ====== Capture globale des erreurs ======
+  useEffect(() => {
+    const handleGlobalError = (event: ErrorEvent) => {
+      console.error("🌋 Erreur JS non capturée :", event.error || event.message);
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.error("⚠️ Promise rejetée non gérée :", event.reason);
+    };
+    window.addEventListener("error", handleGlobalError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleGlobalError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+  // 🧠 ====== Fin bloc capture globale ======
+
+
   // --------- MAP INITIALIZATION ----------
   useEffect(() => {
     if (!mapContainer.current || track.length === 0) return;

@@ -61,7 +61,7 @@ export function useTracker() {
     } catch (err) {
       console.warn("⚠️ Impossible d'activer le Wake Lock :", err);
       // Option : informer l'utilisateur sans casser le flux
-       toast.info("Le maintien de l’écran éveillé n’est pas supporté sur ce navigateur mobile.");
+      // toast.info("Le maintien de l’écran éveillé n’est pas supporté sur ce navigateur mobile.");
     }
   };
 
