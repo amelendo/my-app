@@ -9,7 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Navigation } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
-import { ResponsiveContainer, LineChart, Line, XAxis } from "recharts";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
+
 
 
 interface MapViewProps {
