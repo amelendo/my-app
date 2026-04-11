@@ -9,16 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Navigation } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
+
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
+  CartesianGrid,
+  ReferenceLine,
 } from "recharts";
-
-
 
 interface MapViewProps {
   track: TrackPoint[];
@@ -29,8 +30,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const userMarker = useRef<mapboxgl.Marker | null>(null);
-  const [sportMode, setSportMode] = useState(false);
-  
+
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const {
     isTracking,
@@ -43,29 +44,15 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     loadPath,
   } = useTracker();
 
-// 🧠 ====== Capture globale des erreurs ======
-  useEffect(() => {
-    const handleGlobalError = (event: ErrorEvent) => {
-      console.error("🌋 Erreur JS non capturée :", event.error || event.message);
-    };
-    const handleRejection = (event: PromiseRejectionEvent) => {
-      console.error("⚠️ Promise rejetée non gérée :", event.reason);
-    };
-    window.addEventListener("error", handleGlobalError);
-    window.addEventListener("unhandledrejection", handleRejection);
-    return () => {
-      window.removeEventListener("error", handleGlobalError);
-      window.removeEventListener("unhandledrejection", handleRejection);
-    };
-  }, []);
-  // 🧠 ====== Fin bloc capture globale ======
+  // 👉 DATA utilisée pour le graphique
+  const graphData = userPath.length > 1 ? userPath : track;
 
-
-  // --------- MAP INITIALIZATION ----------
+  // --------- MAP INIT ----------
   useEffect(() => {
     if (!mapContainer.current || track.length === 0) return;
 
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/outdoors-v12",
@@ -78,95 +65,117 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     map.current.on("load", () => {
       const coordinates = track.map((p) => [p.lon, p.lat]);
 
-      // Route principale GPX
+      // GPX route
       map.current!.addSource("route", {
         type: "geojson",
-        data: { type: "Feature", geometry: { type: "LineString", coordinates } },
+        data: {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates },
+        },
       });
+
       map.current!.addLayer({
         id: "route",
         type: "line",
         source: "route",
-        paint: { "line-color": "hsl(15,85%,55%)", "line-width": 4 },
+        paint: {
+          "line-color": "#ff5a1f",
+          "line-width": 4,
+        },
       });
 
-      // Chemin utilisateur
+      // User path
       map.current!.addSource("userPath", {
         type: "geojson",
-        data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+        data: {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: [] },
+        },
       });
+
       map.current!.addLayer({
         id: "userPathLine",
         type: "line",
         source: "userPath",
         paint: {
-          "line-color": "hsl(215,85%,45%)",
+          "line-color": "#2f80ed",
           "line-width": 3,
           "line-dasharray": [2, 2],
         },
       });
 
-      // Restaure les points sauvegardés
+      // restore saved path
       const saved = loadPath();
       if (saved.length > 0) {
         const coords = saved.map((p) => [p.lon, p.lat]);
         const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
-        if (source) {
-          source.setData({
-            type: "Feature",
-            geometry: { type: "LineString", coordinates: coords },
-          });
-        }
+        source?.setData({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: coords },
+        });
       }
     });
 
     return () => map.current?.remove();
   }, [track]);
 
-  // --------- USER PATH LIVE UPDATE ----------
+  // --------- UPDATE USER PATH ----------
   useEffect(() => {
     if (!map.current) return;
+
     const source = map.current.getSource("userPath") as mapboxgl.GeoJSONSource;
+
     if (source) {
       const coords = userPath.map((p) => [p.lon, p.lat]);
+
       source.setData({
         type: "Feature",
         geometry: { type: "LineString", coordinates: coords },
       });
     }
   }, [userPath]);
-  
-  // --------- USER MARKER (POINT DE REPÈRE) ----------
-useEffect(() => {
-  if (!map.current) return;
-  const last = userPath[userPath.length - 1];
-  if (!last) return;
 
-  // créer ou mettre à jour le marker
-  if (!userMarker.current) {
-    const el = document.createElement("div");
-    el.style.width = "18px";
-    el.style.height = "18px";
-    el.style.borderRadius = "50%";
-    el.style.background = "hsl(215, 85%, 45%)";
-    el.style.border = "3px solid white";
-    el.style.boxShadow = "0 0 8px hsl(215, 85%, 45%)";
-    userMarker.current = new mapboxgl.Marker(el)
-      .setLngLat([last.lon, last.lat])
-      .addTo(map.current);
-  } else {
-    userMarker.current.setLngLat([last.lon, last.lat]);
-  }
+  // --------- USER MARKER ----------
+  useEffect(() => {
+    if (!map.current) return;
 
-  // centrer doucement la carte sur la position utilisateur
-  map.current.easeTo({ center: [last.lon, last.lat], duration: 500 });
-}, [userPath]);
+    const last = userPath[userPath.length - 1];
+    if (!last) return;
 
+    if (!userMarker.current) {
+      const el = document.createElement("div");
+      el.style.width = "16px";
+      el.style.height = "16px";
+      el.style.borderRadius = "50%";
+      el.style.background = "#2f80ed";
+      el.style.border = "3px solid white";
+      el.style.boxShadow = "0 0 10px rgba(47,128,237,0.7)";
 
-  // --------- UI -----------
+      userMarker.current = new mapboxgl.Marker(el)
+        .setLngLat([last.lon, last.lat])
+        .addTo(map.current);
+    } else {
+      userMarker.current.setLngLat([last.lon, last.lat]);
+    }
+  }, [userPath]);
+
+  // --------- GRAPH → MAP SYNC ----------
+  useEffect(() => {
+    if (hoverIndex == null || !map.current) return;
+
+    const point = graphData[hoverIndex];
+    if (!point) return;
+
+    map.current.easeTo({
+      center: [point.lon, point.lat],
+      duration: 200,
+    });
+  }, [hoverIndex, graphData]);
+
   return (
     <Card className="overflow-hidden">
-      {/* ==== Carte principale ==== */}
+
+      {/* ==== MAP ==== */}
       <div className="relative h-[600px]">
         <div ref={mapContainer} className="absolute inset-0" />
 
@@ -181,22 +190,16 @@ useEffect(() => {
               className="w-full"
             >
               <Navigation className="h-4 w-4 mr-2" />
-              {isTracking ? "Stop Tracking" : "Start Tracking"}
+              {isTracking ? "Stop" : "Start"}
             </Button>
 
             {isTracking && (
               <div className="text-sm space-y-1">
-                <p>
-                  Distance : <b>{distanceDone.toFixed(2)} km</b>
-                </p>
-                <p>
-                  Dénivelé + : <b>{Math.round(elevationDone)} m</b>
-                </p>
-                <p>
-                  Vitesse moy : <b>{avgSpeed.toFixed(1)} km/h</b>
-                </p>
+                <p><b>{distanceDone.toFixed(2)} km</b></p>
+                <p><b>{Math.round(elevationDone)} m D+</b></p>
+                <p><b>{avgSpeed.toFixed(1)} km/h</b></p>
               </div>
-			  )}
+            )}
 
             {!isTracking && userPath.length > 0 && (
               <Button
@@ -204,56 +207,78 @@ useEffect(() => {
                 variant="secondary"
                 onClick={() => exportToGpx(userPath, `${trackName}_run`)}
               >
-                Exporter GPX
+                Export GPX
               </Button>
             )}
           </Card>
         </div>
       </div>
-{/* ✅ ==> AJOUTE CE BLOC ICI, juste après la carte */}
-        {track.length > 1 && (
-          <div className="px-4 py-3 bg-muted border-t">
-            <h4 className="text-sm text-muted-foreground mb-2">Profil d’altitude</h4>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={track}>
-                <XAxis
-                  dataKey="cumDist"
-                  tickFormatter={(v) => `${v.toFixed(1)} km`}
-                  stroke="#aaa"
-                />
-                <Line dataKey="ele" stroke="#2f80ed" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        {/* ✅ Fin du bloc à ajouter */}
 
-      {/* ==== Graphique d’altitude ==== */}
-      {userPath.length > 1 && (
+      {/* ==== GRAPH ==== */}
+      {graphData.length > 1 && (
         <div className="px-4 py-3 bg-muted border-t">
-          <h4 className="text-sm text-muted-foreground mb-2">
-            Profil d’altitude
-          </h4>
-          <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={userPath}>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart
+              data={graphData}
+              onMouseMove={(state) => {
+                if (state?.activeTooltipIndex != null) {
+                  setHoverIndex(state.activeTooltipIndex);
+                }
+              }}
+              onMouseLeave={() => setHoverIndex(null)}
+            >
+              <defs>
+                <linearGradient id="elevationGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#2f80ed" stopOpacity={0.8}/>
+                  <stop offset="100%" stopColor="#2f80ed" stopOpacity={0.1}/>
+                </linearGradient>
+              </defs>
+
+              <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+
               <XAxis
                 dataKey="cumDist"
                 tickFormatter={(v) => `${v.toFixed(1)} km`}
-                stroke="#aaa"
+                tick={{ fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
               />
-              <YAxis hide domain={["auto", "auto"]} />
+
+              <YAxis
+                tick={{ fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+                domain={["dataMin - 20", "dataMax + 20"]}
+              />
+
               <Tooltip
-                formatter={(value) => `${Math.round(value as number)} m`}
-                labelFormatter={(v) => `${v.toFixed(2)} km`}
+                contentStyle={{
+                  background: "#111",
+                  border: "none",
+                  borderRadius: "8px",
+                  color: "#fff"
+                }}
+                formatter={(value) => [`${Math.round(value as number)} m`, "Altitude"]}
+                labelFormatter={(v) => `Distance ${v.toFixed(2)} km`}
               />
-              <Line
-                type="natural"
+
+              <Area
+                type="monotone"
                 dataKey="ele"
                 stroke="#2f80ed"
-                dot={false}
+                fill="url(#elevationGradient)"
                 strokeWidth={2}
+                dot={false}
               />
-            </LineChart>
+
+              {hoverIndex !== null && graphData[hoverIndex] && (
+                <ReferenceLine
+                  x={graphData[hoverIndex].cumDist}
+                  stroke="#999"
+                  strokeDasharray="3 3"
+                />
+              )}
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       )}
