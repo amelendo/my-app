@@ -10,17 +10,6 @@ import { Navigation } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ReferenceLine,
-} from "recharts";
-
 interface MapViewProps {
   track: TrackPoint[];
   trackName: string;
@@ -31,7 +20,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   const map = useRef<mapboxgl.Map | null>(null);
   const userMarker = useRef<mapboxgl.Marker | null>(null);
 
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [currentPosition, setCurrentPosition] = useState<TrackPoint | null>(null);
 
   const {
     isTracking,
@@ -41,13 +30,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     avgSpeed,
     startTracking,
     stopTracking,
-    loadPath,
-  } = useTracker();
+  } = useTracker(setCurrentPosition); // 👈 on injecte le setter
 
-  // 👉 DATA utilisée pour le graphique
-  const graphData = userPath.length > 1 ? userPath : track;
+  /* ---------------- MAP INIT ---------------- */
 
-  // --------- MAP INIT ----------
   useEffect(() => {
     if (!mapContainer.current || track.length === 0) return;
 
@@ -103,23 +89,13 @@ const MapView = ({ track, trackName }: MapViewProps) => {
           "line-dasharray": [2, 2],
         },
       });
-
-      // restore saved path
-      const saved = loadPath();
-      if (saved.length > 0) {
-        const coords = saved.map((p) => [p.lon, p.lat]);
-        const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
-        source?.setData({
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: coords },
-        });
-      }
     });
 
     return () => map.current?.remove();
   }, [track]);
 
-  // --------- UPDATE USER PATH ----------
+  /* ---------------- UPDATE PATH ---------------- */
+
   useEffect(() => {
     if (!map.current) return;
 
@@ -135,12 +111,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     }
   }, [userPath]);
 
-  // --------- USER MARKER ----------
-  useEffect(() => {
-    if (!map.current) return;
+  /* ---------------- MARKER (ULTRA FIABLE) ---------------- */
 
-    const last = userPath[userPath.length - 1];
-    if (!last) return;
+  useEffect(() => {
+    if (!map.current || !currentPosition) return;
 
     if (!userMarker.current) {
       const el = document.createElement("div");
@@ -152,30 +126,26 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       el.style.boxShadow = "0 0 10px rgba(47,128,237,0.7)";
 
       userMarker.current = new mapboxgl.Marker(el)
-        .setLngLat([last.lon, last.lat])
+        .setLngLat([currentPosition.lon, currentPosition.lat])
         .addTo(map.current);
     } else {
-      userMarker.current.setLngLat([last.lon, last.lat]);
+      userMarker.current.setLngLat([
+        currentPosition.lon,
+        currentPosition.lat,
+      ]);
     }
-  }, [userPath]);
 
-  // --------- GRAPH → MAP SYNC ----------
-  useEffect(() => {
-    if (hoverIndex == null || !map.current) return;
-
-    const point = graphData[hoverIndex];
-    if (!point) return;
-
+    // centrage doux (type Strava)
     map.current.easeTo({
-      center: [point.lon, point.lat],
-      duration: 200,
+      center: [currentPosition.lon, currentPosition.lat],
+      duration: 500,
     });
-  }, [hoverIndex, graphData]);
+  }, [currentPosition]);
+
+  /* ---------------- UI ---------------- */
 
   return (
     <Card className="overflow-hidden">
-
-      {/* ==== MAP ==== */}
       <div className="relative h-[600px]">
         <div ref={mapContainer} className="absolute inset-0" />
 
@@ -213,75 +183,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
           </Card>
         </div>
       </div>
-
-      {/* ==== GRAPH ==== */}
-      {graphData.length > 1 && (
-        <div className="px-4 py-3 bg-muted border-t">
-          <ResponsiveContainer width="100%" height={160}>
-            <AreaChart
-              data={graphData}
-              onMouseMove={(state) => {
-                if (state?.activeTooltipIndex != null) {
-                  setHoverIndex(state.activeTooltipIndex);
-                }
-              }}
-              onMouseLeave={() => setHoverIndex(null)}
-            >
-              <defs>
-                <linearGradient id="elevationGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#2f80ed" stopOpacity={0.8}/>
-                  <stop offset="100%" stopColor="#2f80ed" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-
-              <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-
-              <XAxis
-                dataKey="cumDist"
-                tickFormatter={(v) => `${v.toFixed(1)} km`}
-                tick={{ fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-              />
-
-              <YAxis
-                tick={{ fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                domain={["dataMin - 20", "dataMax + 20"]}
-              />
-
-              <Tooltip
-                contentStyle={{
-                  background: "#111",
-                  border: "none",
-                  borderRadius: "8px",
-                  color: "#fff"
-                }}
-                formatter={(value) => [`${Math.round(value as number)} m`, "Altitude"]}
-                labelFormatter={(v) => `Distance ${v.toFixed(2)} km`}
-              />
-
-              <Area
-                type="monotone"
-                dataKey="ele"
-                stroke="#2f80ed"
-                fill="url(#elevationGradient)"
-                strokeWidth={2}
-                dot={false}
-              />
-
-              {hoverIndex !== null && graphData[hoverIndex] && (
-                <ReferenceLine
-                  x={graphData[hoverIndex].cumDist}
-                  stroke="#999"
-                  strokeDasharray="3 3"
-                />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </Card>
   );
 };
