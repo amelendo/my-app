@@ -1,0 +1,2173 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..289e94d
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,2 @@
++# Token public Mapbox — pensez à le restreindre par URL dans le dashboard Mapbox
++VITE_MAPBOX_TOKEN=pk.your_public_token_here
+diff --git a/.gitignore b/.gitignore
+index 54f07af..d6f57ef 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -21,4 +21,7 @@ dist-ssr
+ *.ntvs*
+ *.njsproj
+ *.sln
+-*.sw?
+\ No newline at end of file
++*.sw?
++# Local env
++.env
++.env.local
+diff --git a/index.html.old b/index.html.old
+deleted file mode 100644
+index f5f1c37..0000000
+--- a/index.html.old
++++ /dev/null
+@@ -1 +0,0 @@
+-<html><body><h1>It works!</h1></body></html>
+diff --git a/src/App.tsx b/src/App.tsx
+index 9c55a7f..ce1ee82 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,17 +1,16 @@
+-import { Toaster, toast } from "sonner"; // official Sonner
++import { Toaster } from "sonner";
+ import { TooltipProvider } from "@/components/ui/tooltip";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { BrowserRouter, Routes, Route } from "react-router-dom";
+ import Index from "./pages/Index";
+ import NotFound from "./pages/NotFound";
+ 
+-
+ const queryClient = new QueryClient();
+ 
+ const App = () => (
+   <QueryClientProvider client={queryClient}>
+     <TooltipProvider>
+-      <Toaster position="top-right" /> {/* Sonner Toaster */}
++      <Toaster position="top-right" />
+       <BrowserRouter>
+         <Routes>
+           <Route path="/" element={<Index />} />
+@@ -23,9 +22,3 @@ const App = () => (
+ );
+ 
+ export default App;
+-
+-
+-
+-toast.success("Action successful!");
+-toast.error("Oops, something went wrong.");
+-
+diff --git a/src/components/ElevationProfile.tsx b/src/components/ElevationProfile.tsx
+new file mode 100644
+index 0000000..01c6dd0
+--- /dev/null
++++ b/src/components/ElevationProfile.tsx
+@@ -0,0 +1,131 @@
++// src/components/ElevationProfile.tsx
++// Profil d'élévation de la trace avec repère de position en direct.
++
++import { useMemo } from "react";
++import {
++  Area,
++  AreaChart,
++  ReferenceLine,
++  ResponsiveContainer,
++  Tooltip,
++  XAxis,
++  YAxis,
++} from "recharts";
++import { Card } from "@/components/ui/card";
++import type { TrackPoint } from "@/utils/gpxParser";
++
++interface ElevationProfileProps {
++  track: TrackPoint[];
++  /** Distance cumulée (km) de la position courante, pour le repère vertical. */
++  currentCumDist?: number;
++  /** Nombre max de points affichés (sous-échantillonnage pour la perf). */
++  maxPoints?: number;
++}
++
++const ElevationProfile = ({
++  track,
++  currentCumDist,
++  maxPoints = 300,
++}: ElevationProfileProps) => {
++  const data = useMemo(() => {
++    const pts = track.filter((p) => p.ele !== undefined && p.cumDist !== undefined);
++    if (pts.length === 0) return [];
++
++    // Sous-échantillonnage régulier
++    const step = Math.max(1, Math.ceil(pts.length / maxPoints));
++    const sampled = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
++
++    return sampled.map((p) => ({
++      dist: Number((p.cumDist ?? 0).toFixed(2)),
++      ele: Math.round(p.ele ?? 0),
++    }));
++  }, [track, maxPoints]);
++
++  if (data.length === 0) {
++    return (
++      <Card className="p-6">
++        <p className="text-sm text-muted-foreground">
++          Aucune donnée d'altitude dans cette trace.
++        </p>
++      </Card>
++    );
++  }
++
++  const eles = data.map((d) => d.ele);
++  const minEle = Math.min(...eles);
++  const maxEle = Math.max(...eles);
++  const pad = Math.max(10, Math.round((maxEle - minEle) * 0.1));
++
++  return (
++    <Card className="p-4">
++      <div className="mb-2 flex items-baseline justify-between">
++        <h3 className="text-sm font-semibold">Profil d'élévation</h3>
++        <span className="text-xs text-muted-foreground">
++          {minEle} – {maxEle} m
++        </span>
++      </div>
++
++      <ResponsiveContainer width="100%" height={180}>
++        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
++          <defs>
++            <linearGradient id="eleFill" x1="0" y1="0" x2="0" y2="1">
++              <stop offset="0%" stopColor="hsl(215 85% 45%)" stopOpacity={0.4} />
++              <stop offset="100%" stopColor="hsl(215 85% 45%)" stopOpacity={0.05} />
++            </linearGradient>
++          </defs>
++
++          <XAxis
++            dataKey="dist"
++            type="number"
++            domain={[0, "dataMax"]}
++            tickFormatter={(v) => `${v}`}
++            tick={{ fontSize: 11 }}
++            unit=" km"
++            stroke="hsl(215 15% 45%)"
++          />
++          <YAxis
++            domain={[minEle - pad, maxEle + pad]}
++            tick={{ fontSize: 11 }}
++            width={44}
++            unit=" m"
++            stroke="hsl(215 15% 45%)"
++          />
++          <Tooltip
++            formatter={(value: number) => [`${value} m`, "Altitude"]}
++            labelFormatter={(label) => `${label} km`}
++            contentStyle={{
++              fontSize: 12,
++              borderRadius: 8,
++              border: "1px solid hsl(215 20% 85%)",
++            }}
++          />
++
++          <Area
++            type="monotone"
++            dataKey="ele"
++            stroke="hsl(215 85% 45%)"
++            strokeWidth={2}
++            fill="url(#eleFill)"
++            isAnimationActive={false}
++          />
++
++          {currentCumDist !== undefined && (
++            <ReferenceLine
++              x={Number(currentCumDist.toFixed(2))}
++              stroke="hsl(15 85% 55%)"
++              strokeWidth={2}
++              label={{
++                value: "Vous",
++                position: "top",
++                fill: "hsl(15 85% 55%)",
++                fontSize: 11,
++              }}
++            />
++          )}
++        </AreaChart>
++      </ResponsiveContainer>
++    </Card>
++  );
++};
++
++export default ElevationProfile;
+diff --git a/src/components/MapView.tsx b/src/components/MapView.tsx
+index 30ef900..433706e 100644
+--- a/src/components/MapView.tsx
++++ b/src/components/MapView.tsx
+@@ -1,14 +1,16 @@
+ "use client";
+ 
+-import { useEffect, useRef, useState } from "react";
++import { useEffect, useMemo, useRef, useState } from "react";
+ import mapboxgl from "mapbox-gl";
+ import "mapbox-gl/dist/mapbox-gl.css";
+-import { TrackPoint } from "@/utils/gpxParser";
++import type { TrackPoint } from "@/utils/gpxParser";
+ import { Card } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+-import { Navigation } from "lucide-react";
++import { Navigation, AlertTriangle } from "lucide-react";
+ import { exportToGpx } from "@/utils/exportGpx";
+ import { useTracker } from "@/hooks/useTracker";
++import { computeNavInfo, type NavInfo } from "@/utils/navigation";
++import ElevationProfile from "@/components/ElevationProfile";
+ 
+ interface MapViewProps {
+   track: TrackPoint[];
+@@ -19,8 +21,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
+   const mapContainer = useRef<HTMLDivElement>(null);
+   const map = useRef<mapboxgl.Map | null>(null);
+   const userMarker = useRef<mapboxgl.Marker | null>(null);
++  const lastNearest = useRef(0);
+ 
+   const [currentPosition, setCurrentPosition] = useState<TrackPoint | null>(null);
++  const [nav, setNav] = useState<NavInfo | null>(null);
+ 
+   const {
+     isTracking,
+@@ -30,10 +34,14 @@ const MapView = ({ track, trackName }: MapViewProps) => {
+     avgSpeed,
+     startTracking,
+     stopTracking,
+-  } = useTracker(setCurrentPosition); // 👈 on injecte le setter
++  } = useTracker(setCurrentPosition);
+ 
+-  /* ---------------- MAP INIT ---------------- */
++  const totalKm = useMemo(
++    () => track[track.length - 1]?.cumDist ?? 0,
++    [track]
++  );
+ 
++  /* ---------------- MAP INIT ---------------- */
+   useEffect(() => {
+     if (!mapContainer.current || track.length === 0) return;
+ 
+@@ -51,34 +59,29 @@ const MapView = ({ track, trackName }: MapViewProps) => {
+     map.current.on("load", () => {
+       const coordinates = track.map((p) => [p.lon, p.lat]);
+ 
+-      // GPX route
+       map.current!.addSource("route", {
+         type: "geojson",
+         data: {
+           type: "Feature",
++          properties: {},
+           geometry: { type: "LineString", coordinates },
+         },
+       });
+-
+       map.current!.addLayer({
+         id: "route",
+         type: "line",
+         source: "route",
+-        paint: {
+-          "line-color": "#ff5a1f",
+-          "line-width": 4,
+-        },
++        paint: { "line-color": "#ff5a1f", "line-width": 4 },
+       });
+ 
+-      // User path
+       map.current!.addSource("userPath", {
+         type: "geojson",
+         data: {
+           type: "Feature",
++          properties: {},
+           geometry: { type: "LineString", coordinates: [] },
+         },
+       });
+-
+       map.current!.addLayer({
+         id: "userPathLine",
+         type: "line",
+@@ -95,96 +98,122 @@ const MapView = ({ track, trackName }: MapViewProps) => {
+   }, [track]);
+ 
+   /* ---------------- UPDATE PATH ---------------- */
+-
+   useEffect(() => {
+-    if (!map.current) return;
+-
+-    const source = map.current.getSource("userPath") as mapboxgl.GeoJSONSource;
+-
++    const source = map.current?.getSource("userPath") as
++      | mapboxgl.GeoJSONSource
++      | undefined;
+     if (source) {
+-      const coords = userPath.map((p) => [p.lon, p.lat]);
+-
+       source.setData({
+         type: "Feature",
+-        geometry: { type: "LineString", coordinates: coords },
++        properties: {},
++        geometry: {
++          type: "LineString",
++          coordinates: userPath.map((p) => [p.lon, p.lat]),
++        },
+       });
+     }
+   }, [userPath]);
+ 
+-  /* ---------------- MARKER (ULTRA FIABLE) ---------------- */
+-
++  /* ---------------- MARKER + NAV ---------------- */
+   useEffect(() => {
+     if (!map.current || !currentPosition) return;
+ 
++    // Marqueur position
+     if (!userMarker.current) {
+       const el = document.createElement("div");
+-      el.style.width = "16px";
+-      el.style.height = "16px";
+-      el.style.borderRadius = "50%";
+-      el.style.background = "#2f80ed";
+-      el.style.border = "3px solid white";
+-      el.style.boxShadow = "0 0 10px rgba(47,128,237,0.7)";
+-
++      el.style.cssText =
++        "width:16px;height:16px;border-radius:50%;background:#2f80ed;border:3px solid white;box-shadow:0 0 10px rgba(47,128,237,0.7)";
+       userMarker.current = new mapboxgl.Marker(el)
+         .setLngLat([currentPosition.lon, currentPosition.lat])
+         .addTo(map.current);
+     } else {
+-      userMarker.current.setLngLat([
+-        currentPosition.lon,
+-        currentPosition.lat,
+-      ]);
++      userMarker.current.setLngLat([currentPosition.lon, currentPosition.lat]);
+     }
+ 
+-    // centrage doux (type Strava)
+     map.current.easeTo({
+       center: [currentPosition.lon, currentPosition.lat],
+       duration: 500,
+     });
+-  }, [currentPosition]);
+ 
+-  /* ---------------- UI ---------------- */
++    // Navigation : distance restante + hors-trace
++    const info = computeNavInfo(currentPosition, track, lastNearest.current);
++    if (info) {
++      lastNearest.current = info.nearestIndex;
++      setNav(info);
++    }
++  }, [currentPosition, track]);
+ 
++  /* ---------------- UI ---------------- */
+   return (
+-    <Card className="overflow-hidden">
+-      <div className="relative h-[600px]">
+-        <div ref={mapContainer} className="absolute inset-0" />
+-
+-        <div className="absolute top-4 left-4 z-10">
+-          <Card className="p-3 bg-card/95 space-y-2">
+-            <h3 className="font-semibold text-sm">{trackName}</h3>
+-
+-            <Button
+-              size="sm"
+-              onClick={isTracking ? stopTracking : startTracking}
+-              variant={isTracking ? "destructive" : "default"}
+-              className="w-full"
+-            >
+-              <Navigation className="h-4 w-4 mr-2" />
+-              {isTracking ? "Stop" : "Start"}
+-            </Button>
+-
+-            {isTracking && (
+-              <div className="text-sm space-y-1">
+-                <p><b>{distanceDone.toFixed(2)} km</b></p>
+-                <p><b>{Math.round(elevationDone)} m D+</b></p>
+-                <p><b>{avgSpeed.toFixed(1)} km/h</b></p>
+-              </div>
+-            )}
+-
+-            {!isTracking && userPath.length > 0 && (
++    <div className="space-y-4">
++      <Card className="overflow-hidden">
++        <div className="relative h-[600px]">
++          <div ref={mapContainer} className="absolute inset-0" />
++
++          <div className="absolute top-4 left-4 z-10 w-52">
++            <Card className="p-3 bg-card/95 space-y-2">
++              <h3 className="font-semibold text-sm">{trackName}</h3>
++
+               <Button
+                 size="sm"
+-                variant="secondary"
+-                onClick={() => exportToGpx(userPath, `${trackName}_run`)}
++                onClick={isTracking ? stopTracking : startTracking}
++                variant={isTracking ? "destructive" : "default"}
++                className="w-full"
+               >
+-                Export GPX
++                <Navigation className="h-4 w-4 mr-2" />
++                {isTracking ? "Stop" : "Start"}
+               </Button>
+-            )}
+-          </Card>
++
++              {isTracking && (
++                <div className="text-sm space-y-1">
++                  <p><b>{distanceDone.toFixed(2)} km</b> parcourus</p>
++                  <p><b>{Math.round(elevationDone)} m</b> D+</p>
++                  <p><b>{avgSpeed.toFixed(1)} km/h</b></p>
++                  {nav && (
++                    <p className="text-muted-foreground">
++                      Reste <b>{nav.remainingKm.toFixed(2)} km</b> / {totalKm.toFixed(1)}
++                    </p>
++                  )}
++                </div>
++              )}
++
++              {isTracking && nav?.offTrack && (
++                <div className="flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
++                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
++                  <span>
++                    Hors trace ({Math.round(nav.distanceToTrackM)} m)
++                  </span>
++                </div>
++              )}
++
++              {!isTracking && userPath.length > 0 && (
++                <Button
++                  size="sm"
++                  variant="secondary"
++                  className="w-full"
++                  onClick={() => exportToGpx(userPath, `${trackName}_run`)}
++                >
++                  Export GPX
++                </Button>
++              )}
++            </Card>
++          </div>
++
++          {/* Barre de progression en bas de carte */}
++          {isTracking && nav && (
++            <div className="absolute bottom-0 left-0 right-0 z-10 h-1.5 bg-black/10">
++              <div
++                className="h-full bg-accent transition-all duration-500"
++                style={{ width: `${Math.round(nav.progressRatio * 100)}%` }}
++              />
++            </div>
++          )}
+         </div>
+-      </div>
+-    </Card>
++      </Card>
++
++      <ElevationProfile track={track} currentCumDist={nav?.currentCumDist} />
++    </div>
+   );
+ };
+ 
+-export default MapView;
+\ No newline at end of file
++export default MapView;
+diff --git a/src/components/MapView.tsx.backup b/src/components/MapView.tsx.backup
+deleted file mode 100644
+index 6e8770e..0000000
+--- a/src/components/MapView.tsx.backup
++++ /dev/null
+@@ -1,312 +0,0 @@
+-import { useEffect, useRef, useState } from "react";
+-import mapboxgl from "mapbox-gl";
+-import "mapbox-gl/dist/mapbox-gl.css";
+-import { TrackPoint } from "@/utils/gpxParser";
+-import { Card } from "@/components/ui/card";
+-import { Button } from "@/components/ui/button";
+-import { Navigation } from "lucide-react";
+-import { toast } from "sonner";
+-import { exportToGpx } from "@/utils/exportGpx";
+-
+-interface MapViewProps {
+-  track: TrackPoint[];
+-  trackName: string;
+-}
+-
+-const MapView = ({ track, trackName }: MapViewProps) => {
+-  const mapContainer = useRef<HTMLDivElement>(null);
+-  const map = useRef<mapboxgl.Map | null>(null);
+-  const userMarker = useRef<mapboxgl.Marker | null>(null);
+-  const watchId = useRef<number | null>(null);
+-
+-  const [isTracking, setIsTracking] = useState(false);
+-  const [sportMode, setSportMode] = useState(false);
+-
+-  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+-  const [distanceDone, setDistanceDone] = useState(0);
+-  const [elevationDone, setElevationDone] = useState(0);
+-  const [startTime, setStartTime] = useState<number | null>(null);
+-  const [avgSpeed, setAvgSpeed] = useState(0);
+-
+-  /* ---------------- MAP INIT ---------------- */
+-
+-  useEffect(() => {
+-    if (!mapContainer.current || track.length === 0) return;
+-
+-    mapboxgl.accessToken =
+-      "pk.eyJ1IjoiYW1lbGVuZG83MyIsImEiOiJjbWdsZHliNTExMzh3Mmxxd2oxYzZ3aXQ1In0.Jj2bDeD2J_ZJ0xX2I2cynQ";
+-
+-    map.current = new mapboxgl.Map({
+-      container: mapContainer.current,
+-      style: "mapbox://styles/mapbox/outdoors-v12",
+-      center: [track[0].lon, track[0].lat],
+-      zoom: 13,
+-    });
+-
+-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+-
+-    map.current.on("load", () => {
+-      if (!map.current) return;
+-
+-      const coordinates = track.map((p) => [p.lon, p.lat]);
+-
+-      map.current.addSource("route", {
+-        type: "geojson",
+-        data: {
+-          type: "Feature",
+-          geometry: { type: "LineString", coordinates },
+-        },
+-      });
+-
+-      map.current.addLayer({
+-        id: "route",
+-        type: "line",
+-        source: "route",
+-        paint: {
+-          "line-color": "hsl(15, 85%, 55%)",
+-          "line-width": 4,
+-        },
+-      });
+-
+-      map.current.addSource("userPath", {
+-        type: "geojson",
+-        data: {
+-          type: "Feature",
+-          geometry: { type: "LineString", coordinates: [] },
+-        },
+-      });
+-
+-      map.current.addLayer({
+-        id: "userPathLine",
+-        type: "line",
+-        source: "userPath",
+-        paint: {
+-          "line-color": "hsl(215, 85%, 45%)",
+-          "line-width": 3,
+-          "line-dasharray": [2, 2],
+-        },
+-      });
+-
+-      const bounds = coordinates.reduce(
+-        (b, c) => b.extend(c as [number, number]),
+-        new mapboxgl.LngLatBounds(
+-          coordinates[0] as [number, number],
+-          coordinates[0] as [number, number]
+-        )
+-      );
+-
+-      map.current.fitBounds(bounds, { padding: 50, duration: 0 });
+-    });
+-
+-    return () => {
+-      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-      map.current?.remove();
+-    };
+-  }, [track]);
+-
+-  /* ---------------- GPS ---------------- */
+-
+-  const handlePosition = (pos: GeolocationPosition) => {
+-    const { latitude, longitude, altitude } = pos.coords;
+-    const time = pos.timestamp;
+-
+-    if (!map.current) return;
+-
+-    if (!userMarker.current) {
+-      const el = document.createElement("div");
+-      el.style.width = "18px";
+-      el.style.height = "18px";
+-      el.style.borderRadius = "50%";
+-      el.style.background = "hsl(215, 85%, 45%)";
+-      el.style.border = "3px solid white";
+-      el.style.boxShadow = "0 0 8px hsl(215, 85%, 45%)";
+-
+-      userMarker.current = new mapboxgl.Marker(el)
+-        .setLngLat([longitude, latitude])
+-        .addTo(map.current);
+-    } else {
+-      userMarker.current.setLngLat([longitude, latitude]);
+-    }
+-
+-    map.current.easeTo({ center: [longitude, latitude], duration: 300 });
+-
+-    setUserPath((prev) => {
+-      const newPoint: TrackPoint = {
+-        lat: latitude,
+-        lon: longitude,
+-        ele: altitude ?? undefined,
+-        time: time,
+-      };
+-
+-      const newPath = [...prev, newPoint];
+-
+-      const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
+-      if (source) {
+-        const coords = newPath.map((p) => [p.lon, p.lat]);
+-        source.setData({
+-          type: "Feature",
+-          geometry: { type: "LineString", coordinates: coords },
+-        });
+-      }
+-
+-      if (newPath.length >= 2) {
+-        const last = newPath[newPath.length - 1];
+-        const prevPoint = newPath[newPath.length - 2];
+-
+-        const dist = getDistanceKm(prevPoint, last);
+-        setDistanceDone((d) => {
+-          const newDist = d + dist;
+-          if (startTime) {
+-            const elapsedHours = (Date.now() - startTime) / 1000 / 3600;
+-            if (elapsedHours > 0) setAvgSpeed(newDist / elapsedHours);
+-          }
+-          return newDist;
+-        });
+-
+-        if (last.ele !== undefined && prevPoint.ele !== undefined) {
+-          const diff = last.ele - prevPoint.ele;
+-          if (diff > 0) setElevationDone((e) => e + diff);
+-        }
+-      }
+-
+-      return newPath;
+-    });
+-  };
+-
+-  const handleError = (err: GeolocationPositionError) => {
+-    if (err.code === err.TIMEOUT) toast.warning("Waiting for GPS signal…");
+-    else toast.error(err.message);
+-  };
+-
+-  const startTracking = () => {
+-    if (!navigator.geolocation) return toast.error("Geolocation not supported");
+-
+-    setUserPath([]);
+-    setDistanceDone(0);
+-    setElevationDone(0);
+-    setAvgSpeed(0);
+-    setStartTime(Date.now());
+-
+-    setIsTracking(true);
+-
+-    watchId.current = navigator.geolocation.watchPosition(
+-      handlePosition,
+-      handleError,
+-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+-    );
+-  };
+-
+-  const stopTracking = () => {
+-    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-    watchId.current = null;
+-    setIsTracking(false);
+-  };
+-
+-  function getDistanceKm(p1: TrackPoint, p2: TrackPoint) {
+-    const R = 6371;
+-    const φ1 = (p1.lat * Math.PI) / 180;
+-    const φ2 = (p2.lat * Math.PI) / 180;
+-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
+-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
+-    const a =
+-      Math.sin(Δφ / 2) ** 2 +
+-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+-  }
+-
+-  /* ---------------- UI ---------------- */
+-
+-  return (
+-    <Card className="overflow-hidden">
+-      <div className="relative h-[600px]">
+-        <div ref={mapContainer} className="absolute inset-0" />
+-
+-        {/* ------ NORMAL UI ------ */}
+-        {!sportMode && (
+-          <div className="absolute top-4 left-4 z-10">
+-            <Card className="p-3 bg-card/95 space-y-2">
+-              <h3 className="font-semibold text-sm">{trackName}</h3>
+-
+-              <Button
+-                size="sm"
+-                onClick={isTracking ? stopTracking : startTracking}
+-                variant={isTracking ? "destructive" : "default"}
+-                className="w-full"
+-              >
+-                <Navigation className="h-4 w-4 mr-2" />
+-                {isTracking ? "Stop Tracking" : "Start Tracking"}
+-              </Button>
+-
+-              <Button
+-                size="sm"
+-                variant="secondary"
+-                className="w-full"
+-                onClick={() => setSportMode(true)}
+-              >
+-                Mode Sport
+-              </Button>
+-
+-              {isTracking && (
+-                <div className="text-sm space-y-1">
+-                  <p>Distance : <b>{distanceDone.toFixed(2)} km</b></p>
+-                  <p>Dénivelé + : <b>{Math.round(elevationDone)} m</b></p>
+-                  <p>Vitesse moy : <b>{avgSpeed.toFixed(1)} km/h</b></p>
+-                </div>
+-              )}
+-
+-              {!isTracking && userPath.length > 0 && (
+-                <Button
+-                  size="sm"
+-                  variant="secondary"
+-                  className="w-full"
+-                  onClick={() => exportToGpx(userPath, trackName + "_run")}
+-                >
+-                  Exporter GPX
+-                </Button>
+-              )}
+-            </Card>
+-          </div>
+-        )}
+-
+-        {/* ------ SPORT MODE UI ------ */}
+-        {sportMode && (
+-          <div className="absolute inset-0 z-20 bg-black/50 flex flex-col justify-between p-6 text-white">
+-
+-            <div className="text-center space-y-6 mt-6">
+-              <div className="text-5xl font-bold">
+-                {distanceDone.toFixed(2)} km
+-              </div>
+-              <div className="text-3xl">
+-                +{Math.round(elevationDone)} m
+-              </div>
+-              <div className="text-3xl">
+-                {avgSpeed.toFixed(1)} km/h
+-              </div>
+-            </div>
+-
+-            <div className="flex flex-col gap-4 mb-6 items-center">
+-              <Button
+-                size="lg"
+-                className="text-xl px-10 py-6"
+-                onClick={isTracking ? stopTracking : startTracking}
+-                variant={isTracking ? "destructive" : "default"}
+-              >
+-                {isTracking ? "STOP" : "START"}
+-              </Button>
+-
+-              <Button
+-                size="sm"
+-                variant="secondary"
+-                onClick={() => setSportMode(false)}
+-              >
+-                Quitter mode sport
+-              </Button>
+-            </div>
+-          </div>
+-        )}
+-      </div>
+-    </Card>
+-  );
+-};
+-
+-export default MapView;
+diff --git a/src/components/MapView.tsx.backup1 b/src/components/MapView.tsx.backup1
+deleted file mode 100644
+index f1e3914..0000000
+--- a/src/components/MapView.tsx.backup1
++++ /dev/null
+@@ -1,210 +0,0 @@
+-import { useEffect, useRef, useState } from "react";
+-import mapboxgl from "mapbox-gl";
+-import "mapbox-gl/dist/mapbox-gl.css";
+-import { TrackPoint } from "@/utils/gpxParser";
+-import { Card } from "@/components/ui/card";
+-import { Button } from "@/components/ui/button";
+-import { Navigation } from "lucide-react";
+-import { toast } from "sonner";
+-
+-interface MapViewProps {
+-  track: TrackPoint[];
+-  trackName: string;
+-}
+-
+-const MapView = ({ track, trackName }: MapViewProps) => {
+-  const mapContainer = useRef<HTMLDivElement>(null);
+-  const map = useRef<mapboxgl.Map | null>(null);
+-  const userMarker = useRef<mapboxgl.Marker | null>(null);
+-  const watchId = useRef<number | null>(null);
+-
+-  const [isTracking, setIsTracking] = useState(false);
+-  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+-  const [pace, setPace] = useState<string>("–:–");
+-  const [distance, setDistance] = useState<number>(0);
+-  const [elevation, setElevation] = useState<number>(0);
+-
+-  /* ---------------- MAP ---------------- */
+-  useEffect(() => {
+-    if (!mapContainer.current || track.length === 0) return;
+-
+-    mapboxgl.accessToken =
+-      "pk.eyJ1IjoiYW1lbGVuZG83MyIsImEiOiJjbWdsZHliNTExMzh3Mmxxd2oxYzZ3aXQ1In0.Jj2bDeD2J_ZJ0xX2I2cynQ";
+-
+-    map.current = new mapboxgl.Map({
+-      container: mapContainer.current,
+-      style: "mapbox://styles/mapbox/outdoors-v12",
+-      center: [track[0].lon, track[0].lat],
+-      zoom: 13,
+-    });
+-
+-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+-
+-    map.current.on("load", () => {
+-      if (!map.current) return;
+-
+-      // GPX Track
+-      const coordinates = track.map((p) => [p.lon, p.lat]);
+-      map.current.addSource("route", {
+-        type: "geojson",
+-        data: { type: "Feature", geometry: { type: "LineString", coordinates } },
+-      });
+-      map.current.addLayer({
+-        id: "route",
+-        type: "line",
+-        source: "route",
+-        paint: { "line-color": "hsl(15, 85%, 55%)", "line-width": 4 },
+-      });
+-
+-      // Bounds
+-      const bounds = coordinates.reduce(
+-        (b, c) => b.extend(c as [number, number]),
+-        new mapboxgl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number])
+-      );
+-      map.current.fitBounds(bounds, { padding: 50, duration: 0 });
+-
+-      // User path
+-      map.current.addSource("userPath", {
+-        type: "geojson",
+-        data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+-      });
+-      map.current.addLayer({
+-        id: "userPathLine",
+-        type: "line",
+-        source: "userPath",
+-        paint: { "line-color": "hsl(215, 85%, 45%)", "line-width": 3, "line-dasharray": [2, 2] },
+-      });
+-    });
+-
+-    return () => {
+-      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-      map.current?.remove();
+-    };
+-  }, [track]);
+-
+-  /* ---------------- GPS & TRACKING ---------------- */
+-  const handlePosition = (pos: GeolocationPosition) => {
+-    const { latitude, longitude, altitude } = pos.coords;
+-    const time = pos.timestamp;
+-
+-    if (!map.current) return;
+-
+-    // Marqueur utilisateur — copie exacte de ta version initiale
+-    if (!userMarker.current) {
+-      const el = document.createElement("div");
+-      el.style.width = "18px";
+-      el.style.height = "18px";
+-      el.style.borderRadius = "50%";
+-      el.style.background = "hsl(215, 85%, 45%)";
+-      el.style.border = "3px solid white";
+-      userMarker.current = new mapboxgl.Marker(el)
+-        .setLngLat([longitude, latitude])
+-        .addTo(map.current);
+-    } else {
+-      userMarker.current.setLngLat([longitude, latitude]);
+-    }
+-
+-    // Centrer la vue
+-    map.current.jumpTo({ center: [longitude, latitude] });
+-
+-    // Mettre à jour chemin
+-    setUserPath((prev) => {
+-      const newPath = [...prev, { lat: latitude, lon: longitude, ele: altitude ?? 0, time }];
+-      const coords = newPath.map((p) => [p.lon, p.lat]);
+-      const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
+-      if (source) source.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
+-
+-      // Distance cumulée
+-      if (newPath.length >= 2) {
+-        const last = newPath[newPath.length - 1];
+-        const prevPoint = newPath[newPath.length - 2];
+-        const d = getDistanceKm(prevPoint, last);
+-        setDistance((prev) => prev + d);
+-
+-        // Dénivelé
+-        if (last.ele && prevPoint.ele) setElevation((prev) => prev + Math.max(0, last.ele - prevPoint.ele));
+-
+-        // Allure instantanée
+-        const timeDiff = (last.time! - prevPoint.time!) / 1000;
+-        const paceSecPerKm = d > 0 ? timeDiff / d : 0;
+-        setPace(formatPace(paceSecPerKm));
+-      }
+-
+-      return newPath;
+-    });
+-  };
+-
+-  const handleError = (err: GeolocationPositionError) => {
+-    if (err.code === err.TIMEOUT) toast.warning("Waiting for GPS signal…");
+-    else toast.error(err.message);
+-  };
+-
+-  const startTracking = () => {
+-    if (!navigator.geolocation) return toast.error("Geolocation not supported");
+-    setIsTracking(true);
+-    watchId.current = navigator.geolocation.watchPosition(handlePosition, handleError, {
+-      enableHighAccuracy: true,
+-      timeout: 20000,
+-      maximumAge: 0,
+-    });
+-  };
+-
+-  const stopTracking = () => {
+-    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-    watchId.current = null;
+-    setIsTracking(false);
+-  };
+-
+-  /* ---------------- HELPERS ---------------- */
+-  function getDistanceKm(p1: TrackPoint, p2: TrackPoint) {
+-    const R = 6371;
+-    const φ1 = (p1.lat * Math.PI) / 180;
+-    const φ2 = (p2.lat * Math.PI) / 180;
+-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
+-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
+-    const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+-    return R * c;
+-  }
+-
+-  function formatPace(secPerKm: number) {
+-    if (secPerKm <= 0) return "–:–";
+-    const m = Math.floor(secPerKm / 60);
+-    const s = Math.round(secPerKm % 60);
+-    return `${m}:${s.toString().padStart(2, "0")} / km`;
+-  }
+-
+-  /* ---------------- UI ---------------- */
+-  return (
+-    <Card className="overflow-hidden">
+-      <div className="relative h-[600px]">
+-        <div ref={mapContainer} className="absolute inset-0" />
+-
+-        <div className="absolute top-4 left-4 z-10">
+-          <Card className="p-3 bg-card/95">
+-            <h3 className="font-semibold text-sm mb-2">{trackName}</h3>
+-            <Button
+-              size="sm"
+-              onClick={isTracking ? stopTracking : startTracking}
+-              variant={isTracking ? "destructive" : "default"}
+-              className="w-full"
+-            >
+-              <Navigation className="h-4 w-4 mr-2" />
+-              {isTracking ? "Stop Tracking" : "Start Tracking"}
+-            </Button>
+-
+-            {isTracking && (
+-              <div className="mt-3 text-sm">
+-                <p>Allure actuelle : <b>{pace}</b></p>
+-                <p>Distance parcourue : <b>{distance.toFixed(2)} km</b></p>
+-                <p>Dénivelé positif : <b>{Math.round(elevation)} m</b></p>
+-              </div>
+-            )}
+-          </Card>
+-        </div>
+-      </div>
+-    </Card>
+-  );
+-};
+-
+-export default MapView;
+diff --git a/src/components/MapView_backup07042026.tsx b/src/components/MapView_backup07042026.tsx
+deleted file mode 100644
+index 70f95db..0000000
+--- a/src/components/MapView_backup07042026.tsx
++++ /dev/null
+@@ -1,361 +0,0 @@
+-"use client";
+-
+-import { useEffect, useRef, useState } from "react";
+-import mapboxgl from "mapbox-gl";
+-import "mapbox-gl/dist/mapbox-gl.css";
+-import { TrackPoint } from "@/utils/gpxParser";
+-import { Card } from "@/components/ui/card";
+-import { Button } from "@/components/ui/button";
+-import { Navigation } from "lucide-react";
+-import { toast } from "sonner";
+-import { exportToGpx } from "@/utils/exportGpx";
+-
+-interface MapViewProps {
+-  track: TrackPoint[];
+-  trackName: string;
+-}
+-
+-const PATH_STORAGE_KEY = "currentPath";
+-
+-const MapView = ({ track, trackName }: MapViewProps) => {
+-  const mapContainer = useRef<HTMLDivElement>(null);
+-  const map = useRef<mapboxgl.Map | null>(null);
+-  const userMarker = useRef<mapboxgl.Marker | null>(null);
+-  const watchId = useRef<number | null>(null);
+-  const wakeLock = useRef<any>(null);
+-
+-  const [isTracking, setIsTracking] = useState(false);
+-  const [sportMode, setSportMode] = useState(false);
+-  const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+-  const [distanceDone, setDistanceDone] = useState(0);
+-  const [elevationDone, setElevationDone] = useState(0);
+-  const [startTime, setStartTime] = useState<number | null>(null);
+-  const [avgSpeed, setAvgSpeed] = useState(0);
+-
+-  /* ------------------- LOCAL STORAGE ------------------- */
+-  const savePath = (points: TrackPoint[]) => {
+-    localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify(points));
+-  };
+-
+-  const loadPath = (): TrackPoint[] => {
+-    const data = localStorage.getItem(PATH_STORAGE_KEY);
+-    return data ? JSON.parse(data) : [];
+-  };
+-
+-  /* ------------------- WAKE LOCK ------------------- */
+-  const requestWakeLock = async () => {
+-    try {
+-      if ("wakeLock" in navigator) {
+-        wakeLock.current = await (navigator as any).wakeLock.request("screen");
+-        wakeLock.current.addEventListener("release", () =>
+-          console.log("Wake lock released")
+-        );
+-      }
+-    } catch (err) {
+-      console.error("Cannot obtain wake lock:", err);
+-    }
+-  };
+-
+-  const releaseWakeLock = async () => {
+-    if (wakeLock.current) {
+-      await wakeLock.current.release();
+-      wakeLock.current = null;
+-    }
+-  };
+-
+-  /* ------------------- MAP INIT ------------------- */
+-  useEffect(() => {
+-    if (!mapContainer.current || track.length === 0) return;
+-
+-    //mapboxgl.accessToken =
+-    //  "pk.eyJ1IjoiYW1lbGVuZG83MyIsImEiOiJjbWdsZHliNTExMzh3Mmxxd2oxYzZ3aXQ1In0.Jj2bDeD2J_ZJ0xX2I2cynQ";
+-
+-    mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
+-
+-    map.current = new mapboxgl.Map({
+-      container: mapContainer.current,
+-      style: "mapbox://styles/mapbox/outdoors-v12",
+-      center: [track[0].lon, track[0].lat],
+-      zoom: 13,
+-    });
+-
+-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+-
+-    map.current.on("load", () => {
+-      if (!map.current) return;
+-
+-      const coordinates = track.map((p) => [p.lon, p.lat]);
+-
+-      // GPX route
+-      map.current.addSource("route", {
+-        type: "geojson",
+-        data: {
+-          type: "Feature",
+-          geometry: { type: "LineString", coordinates },
+-        },
+-      });
+-
+-      map.current.addLayer({
+-        id: "route",
+-        type: "line",
+-        source: "route",
+-        paint: {
+-          "line-color": "hsl(15, 85%, 55%)",
+-          "line-width": 4,
+-        },
+-      });
+-
+-      // User path live
+-      map.current.addSource("userPath", {
+-        type: "geojson",
+-        data: {
+-          type: "Feature",
+-          geometry: { type: "LineString", coordinates: [] },
+-        },
+-      });
+-
+-      map.current.addLayer({
+-        id: "userPathLine",
+-        type: "line",
+-        source: "userPath",
+-        paint: {
+-          "line-color": "hsl(215, 85%, 45%)",
+-          "line-width": 3,
+-          "line-dasharray": [2, 2],
+-        },
+-      });
+-
+-      // Restore saved path
+-      const saved = loadPath();
+-      if (saved.length) {
+-        setUserPath(saved);
+-        const coords = saved.map((p) => [p.lon, p.lat]);
+-        const source = map.current?.getSource(
+-          "userPath"
+-        ) as mapboxgl.GeoJSONSource;
+-        if (source) source.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
+-
+-        const last = saved[saved.length - 1];
+-        map.current.easeTo({ center: [last.lon, last.lat], duration: 0 });
+-      }
+-    });
+-
+-    return () => {
+-      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-      map.current?.remove();
+-      releaseWakeLock();
+-    };
+-  }, [track]);
+-
+-  /* ------------------- GPS ------------------- */
+-  const handlePosition = (pos: GeolocationPosition) => {
+-    const { latitude, longitude, altitude } = pos.coords;
+-	if (pos.coords.accuracy > 25) return;
+-    const time = pos.timestamp;
+-
+-    if (!map.current) return;
+-
+-    if (!userMarker.current) {
+-      const el = document.createElement("div");
+-      el.style.width = "18px";
+-      el.style.height = "18px";
+-      el.style.borderRadius = "50%";
+-      el.style.background = "hsl(215, 85%, 45%)";
+-      el.style.border = "3px solid white";
+-      el.style.boxShadow = "0 0 8px hsl(215, 85%, 45%)";
+-
+-      userMarker.current = new mapboxgl.Marker(el)
+-        .setLngLat([longitude, latitude])
+-        .addTo(map.current);
+-    } else {
+-      userMarker.current.setLngLat([longitude, latitude]);
+-    }
+-
+-    map.current.easeTo({ center: [longitude, latitude], duration: 300 });
+-
+-    setUserPath((prev) => {
+-
+-  const newPoint: TrackPoint = {
+-    lat: latitude,
+-    lon: longitude,
+-    ele: altitude ?? undefined,
+-    time
+-  };
+-
+-  // -------- FILTRE SAUT GPS --------
+-  if (prev.length > 0) {
+-    const last = prev[prev.length - 1];
+-    const dist = getDistanceKm(last, newPoint);
+-
+-    // Ignore les sauts GPS > 100m
+-    if (dist > 0.1) return prev;
+-  }
+-
+-  const newPath = [...prev, newPoint];
+-
+-  const source = map.current?.getSource("userPath") as mapboxgl.GeoJSONSource;
+-  if (source) {
+-    const coords = newPath.map((p) => [p.lon, p.lat]);
+-    source.setData({
+-      type: "Feature",
+-      geometry: { type: "LineString", coordinates: coords }
+-    });
+-  }
+-
+-  savePath(newPath); // persist user path
+-
+-      // Update stats
+-      if (newPath.length >= 2) {
+-        const last = newPath[newPath.length - 1];
+-        const prevPoint = newPath[newPath.length - 2];
+-        const dist = getDistanceKm(prevPoint, last);
+-        setDistanceDone((d) => {
+-          const newDist = d + dist;
+-          if (startTime) {
+-            const elapsedHours = (Date.now() - startTime) / 1000 / 3600;
+-            if (elapsedHours > 0) setAvgSpeed(newDist / elapsedHours);
+-          }
+-          return newDist;
+-        });
+-        if (last.ele !== undefined && prevPoint.ele !== undefined) {
+-          const diff = last.ele - prevPoint.ele;
+-          if (diff > 0) setElevationDone((e) => e + diff);
+-        }
+-      }
+-
+-      return newPath;
+-    });
+-  };
+-
+-  const handleError = (err: GeolocationPositionError) => {
+-    if (err.code === err.TIMEOUT) toast.warning("Waiting for GPS signal…");
+-    else toast.error(err.message);
+-  };
+-
+-  const startTracking = () => {
+-    if (!navigator.geolocation) return toast.error("Geolocation not supported");
+-
+-    setUserPath([]);
+-    setDistanceDone(0);
+-    setElevationDone(0);
+-    setAvgSpeed(0);
+-    setStartTime(Date.now());
+-    setIsTracking(true);
+-
+-    requestWakeLock(); // keep screen awake
+-
+-    watchId.current = navigator.geolocation.watchPosition(handlePosition, handleError, {
+-      enableHighAccuracy: true,
+-      timeout: 10000,
+-      maximumAge: 1000,
+-    });
+-  };
+-
+-  const stopTracking = () => {
+-    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+-    watchId.current = null;
+-    setIsTracking(false);
+-    releaseWakeLock();
+-  };
+-
+-  /* ------------------- UTILS ------------------- */
+-  function getDistanceKm(p1: TrackPoint, p2: TrackPoint) {
+-    const R = 6371;
+-    const φ1 = (p1.lat * Math.PI) / 180;
+-    const φ2 = (p2.lat * Math.PI) / 180;
+-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
+-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
+-    const a =
+-      Math.sin(Δφ / 2) ** 2 +
+-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+-  }
+-
+-  /* ------------------- UI ------------------- */
+-  return (
+-    <Card className="overflow-hidden">
+-      <div className="relative h-[600px]">
+-        <div ref={mapContainer} className="absolute inset-0" />
+-
+-        {!sportMode && (
+-          <div className="absolute top-4 left-4 z-10">
+-            <Card className="p-3 bg-card/95 space-y-2">
+-              <h3 className="font-semibold text-sm">{trackName}</h3>
+-
+-              <Button
+-                size="sm"
+-                onClick={isTracking ? stopTracking : startTracking}
+-                variant={isTracking ? "destructive" : "default"}
+-                className="w-full"
+-              >
+-                <Navigation className="h-4 w-4 mr-2" />
+-                {isTracking ? "Stop Tracking" : "Start Tracking"}
+-              </Button>
+-
+-              <Button
+-                size="sm"
+-                variant="secondary"
+-                className="w-full"
+-                onClick={() => setSportMode(true)}
+-              >
+-                Mode Sport
+-              </Button>
+-
+-              {isTracking && (
+-                <div className="text-sm space-y-1">
+-                  <p>
+-                    Distance : <b>{distanceDone.toFixed(2)} km</b>
+-                  </p>
+-                  <p>
+-                    Dénivelé + : <b>{Math.round(elevationDone)} m</b>
+-                  </p>
+-                  <p>
+-                    Vitesse moy : <b>{avgSpeed.toFixed(1)} km/h</b>
+-                  </p>
+-                </div>
+-              )}
+-
+-              {!isTracking && userPath.length > 0 && (
+-                <Button
+-                  size="sm"
+-                  variant="secondary"
+-                  className="w-full"
+-                  onClick={() => exportToGpx(userPath, trackName + "_run")}
+-                >
+-                  Exporter GPX
+-                </Button>
+-              )}
+-            </Card>
+-          </div>
+-        )}
+-
+-        {sportMode && (
+-          <div className="absolute inset-0 z-20 bg-black/50 flex flex-col justify-between p-6 text-white">
+-            <div className="text-center space-y-6 mt-6">
+-              <div className="text-5xl font-bold">{distanceDone.toFixed(2)} km</div>
+-              <div className="text-3xl">+{Math.round(elevationDone)} m</div>
+-              <div className="text-3xl">{avgSpeed.toFixed(1)} km/h</div>
+-            </div>
+-
+-            <div className="flex flex-col gap-4 mb-6 items-center">
+-              <Button
+-                size="lg"
+-                className="text-xl px-10 py-6"
+-                onClick={isTracking ? stopTracking : startTracking}
+-                variant={isTracking ? "destructive" : "default"}
+-              >
+-                {isTracking ? "STOP" : "START"}
+-              </Button>
+-
+-              <Button size="sm" variant="secondary" onClick={() => setSportMode(false)}>
+-                Quitter mode sport
+-              </Button>
+-            </div>
+-          </div>
+-        )}
+-      </div>
+-    </Card>
+-  );
+-};
+-
+-export default MapView;
+diff --git a/src/components/TrackStats.tsx.backup b/src/components/TrackStats.tsx.backup
+deleted file mode 100644
+index 9f91381..0000000
+--- a/src/components/TrackStats.tsx.backup
++++ /dev/null
+@@ -1,51 +0,0 @@
+-import { Card } from "@/components/ui/card";
+-import { MapPin, TrendingUp, TrendingDown } from "lucide-react";
+-import { GPXTrack } from "@/utils/gpxParser";
+-
+-interface TrackStatsProps {
+-  track: GPXTrack;
+-}
+-
+-const TrackStats = ({ track }: TrackStatsProps) => {
+-  return (
+-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+-      <Card className="p-6 bg-gradient-to-br from-card to-card/50 border-2 hover:shadow-lg transition-all duration-300">
+-        <div className="flex items-center gap-3">
+-          <div className="rounded-full bg-accent/10 p-3">
+-            <MapPin className="h-6 w-6 text-accent" />
+-          </div>
+-          <div>
+-            <p className="text-sm text-muted-foreground">Distance</p>
+-            <p className="text-2xl font-bold">{track.distance} km</p>
+-          </div>
+-        </div>
+-      </Card>
+-      
+-      <Card className="p-6 bg-gradient-to-br from-card to-card/50 border-2 hover:shadow-lg transition-all duration-300">
+-        <div className="flex items-center gap-3">
+-          <div className="rounded-full bg-primary/10 p-3">
+-            <TrendingUp className="h-6 w-6 text-primary" />
+-          </div>
+-          <div>
+-            <p className="text-sm text-muted-foreground">Elevation Gain</p>
+-            <p className="text-2xl font-bold">{track.elevationGain} m</p>
+-          </div>
+-        </div>
+-      </Card>
+-      
+-      <Card className="p-6 bg-gradient-to-br from-card to-card/50 border-2 hover:shadow-lg transition-all duration-300">
+-        <div className="flex items-center gap-3">
+-          <div className="rounded-full bg-destructive/10 p-3">
+-            <TrendingDown className="h-6 w-6 text-destructive" />
+-          </div>
+-          <div>
+-            <p className="text-sm text-muted-foreground">Elevation Loss</p>
+-            <p className="text-2xl font-bold">{track.elevationLoss} m</p>
+-          </div>
+-        </div>
+-      </Card>
+-    </div>
+-  );
+-};
+-
+-export default TrackStats;
+\ No newline at end of file
+diff --git a/src/components/vite.config.ts b/src/components/vite.config.ts
+deleted file mode 100644
+index a5c8708..0000000
+--- a/src/components/vite.config.ts
++++ /dev/null
+@@ -1,52 +0,0 @@
+-import { defineConfig } from "vite";
+-import react from "@vitejs/plugin-react";
+-import { VitePWA } from "vite-plugin-pwa";
+-
+-export default defineConfig({
+-  plugins: [
+-    react(),
+-    VitePWA({
+-      registerType: "autoUpdate",
+-      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+-      manifest: {
+-        name: "Trail Tracker",
+-        short_name: "Tracker",
+-        description: "Suivi GPS trail type Komoot",
+-        theme_color: "#0f172a",
+-        background_color: "#0f172a",
+-        display: "standalone",
+-        orientation: "portrait",
+-        scope: "/",
+-        start_url: "/",
+-        icons: [
+-          {
+-            src: "/pwa-192.png",
+-            sizes: "192x192",
+-            type: "image/png",
+-          },
+-          {
+-            src: "/pwa-512.png",
+-            sizes: "512x512",
+-            type: "image/png",
+-          },
+-        ],
+-      },
+-
+-      workbox: {
+-        runtimeCaching: [
+-          {
+-            urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
+-            handler: "CacheFirst",
+-            options: {
+-              cacheName: "mapbox-cache",
+-              expiration: {
+-                maxEntries: 100,
+-                maxAgeSeconds: 60 * 60 * 24 * 30,
+-              },
+-            },
+-          },
+-        ],
+-      },
+-    }),
+-  ],
+-});
+\ No newline at end of file
+diff --git a/src/hooks/useTracker.ts b/src/hooks/useTracker.ts
+index 349d7f2..ef3c5ca 100644
+--- a/src/hooks/useTracker.ts
++++ b/src/hooks/useTracker.ts
+@@ -1,210 +1,218 @@
+ import { useEffect, useRef, useState } from "react";
+ import { toast } from "sonner";
+-import { TrackPoint } from "@/utils/gpxParser";
++import type { TrackPoint } from "@/utils/gpxParser";
++import { savePath, loadPath as loadStoredPath, clearPath } from "@/lib/trackStore";
+ 
+ /* ------------------- Constantes ------------------- */
+-const PATH_STORAGE_KEY = "currentPath";
++const ACCURACY_MAX_M = 25;        // rejet des fixes trop imprécis
++const JUMP_MAX_M = 100;           // rejet des sauts GPS aberrants
++const ELEVATION_THRESHOLD_M = 3;  // seuil anti-bruit pour le D+ (comme gpxParser)
++const EMA_ALPHA = 0.35;           // lissage exponentiel de la position
++const SAVE_INTERVAL_MS = 4000;    // fréquence max de sauvegarde IndexedDB
++const WEAK_SIGNAL_STREAK = 8;     // nb de fixes rejetés avant alerte
++
++/* ------------------- Utils géo ------------------- */
++function haversineMeters(p1: TrackPoint, p2: TrackPoint): number {
++  const R = 6371000;
++  const f1 = (p1.lat * Math.PI) / 180;
++  const f2 = (p2.lat * Math.PI) / 180;
++  const df = ((p2.lat - p1.lat) * Math.PI) / 180;
++  const dl = ((p2.lon - p1.lon) * Math.PI) / 180;
++  const a =
++    Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
++  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
++}
+ 
+ /* ------------------- Hook principal ------------------- */
+-export function useTracker(
+-  setCurrentPosition?: (p: TrackPoint) => void // 👈 NOUVEAU
+-) {
++export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
+   const [isTracking, setIsTracking] = useState(false);
+   const [userPath, setUserPath] = useState<TrackPoint[]>([]);
+-  const [distanceDone, setDistanceDone] = useState(0);
+-  const [elevationDone, setElevationDone] = useState(0);
+-  const [avgSpeed, setAvgSpeed] = useState(0);
++  const [distanceDone, setDistanceDone] = useState(0); // km
++  const [elevationDone, setElevationDone] = useState(0); // m (D+)
++  const [avgSpeed, setAvgSpeed] = useState(0); // km/h
++
++  // Sources de vérité (refs) — évite les setState imbriqués
++  const pathRef = useRef<TrackPoint[]>([]);
++  const distanceKmRef = useRef(0);
++  const elevationRef = useRef(0);
++  const eleBufferRef = useRef(0);
++  const emaRef = useRef<{ lat: number; lon: number } | null>(null);
++  const lastSavedRef = useRef(0);
++  const weakStreakRef = useRef(0);
+ 
+   const watchId = useRef<number | null>(null);
+   const wakeLock = useRef<any>(null);
+   const startTime = useRef<number | null>(null);
+ 
+-  /* ------------------- UTILS ------------------- */
+-
+-  const getDistanceKm = (p1: TrackPoint, p2: TrackPoint) => {
+-    const R = 6371;
+-    const φ1 = (p1.lat * Math.PI) / 180;
+-    const φ2 = (p2.lat * Math.PI) / 180;
+-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
+-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
+-
+-    const a =
+-      Math.sin(Δφ / 2) ** 2 +
+-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+-
+-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+-  };
+-
+-  /* ------------------- LOCAL STORAGE ------------------- */
+-
+-  const savePath = (points: TrackPoint[]) => {
+-    localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify(points));
+-  };
+-
+-  const loadPath = (): TrackPoint[] => {
+-    const data = localStorage.getItem(PATH_STORAGE_KEY);
+-    return data ? JSON.parse(data) : [];
+-  };
+-
+   /* ------------------- WAKE LOCK ------------------- */
+-
+   const requestWakeLock = async () => {
+     try {
+-      if (
+-        "wakeLock" in navigator &&
+-        typeof (navigator as any).wakeLock.request === "function"
+-      ) {
++      if ("wakeLock" in navigator && (navigator as any).wakeLock?.request) {
+         wakeLock.current = await (navigator as any).wakeLock.request("screen");
+-
+-        wakeLock.current.addEventListener("release", () => {
+-          console.log("🔓 Wake Lock libéré");
+-        });
+-
+-        console.log("✅ Wake Lock activé");
+       }
+     } catch (err) {
+-      console.warn("⚠️ Wake Lock erreur :", err);
++      console.warn("Wake Lock indisponible :", err);
+     }
+   };
+ 
+   const releaseWakeLock = async () => {
+     try {
+-      if (wakeLock.current) {
+-        await wakeLock.current.release();
+-        wakeLock.current = null;
+-      }
++      await wakeLock.current?.release();
+     } catch (err) {
+-      console.warn("⚠️ Release Wake Lock erreur :", err);
++      console.warn("Release Wake Lock :", err);
++    } finally {
++      wakeLock.current = null;
+     }
+   };
+ 
+   /* ------------------- GPS ------------------- */
+-
+   const handlePosition = (pos: GeolocationPosition) => {
+     const { latitude, longitude, altitude, accuracy } = pos.coords;
+-    const time = pos.timestamp;
+ 
+-    // ❌ filtre précision GPS
+-    if (accuracy > 25) return;
++    // Filtre précision, avec alerte si le signal reste faible
++    if (accuracy > ACCURACY_MAX_M) {
++      weakStreakRef.current += 1;
++      if (weakStreakRef.current === WEAK_SIGNAL_STREAK) {
++        toast.warning("Signal GPS faible — position peu fiable");
++      }
++      return;
++    }
++    weakStreakRef.current = 0;
+ 
+-    const newPoint: TrackPoint = {
+-      lat: latitude,
+-      lon: longitude,
++    // Lissage exponentiel non destructif de la position
++    if (!emaRef.current) {
++      emaRef.current = { lat: latitude, lon: longitude };
++    } else {
++      emaRef.current = {
++        lat: EMA_ALPHA * latitude + (1 - EMA_ALPHA) * emaRef.current.lat,
++        lon: EMA_ALPHA * longitude + (1 - EMA_ALPHA) * emaRef.current.lon,
++      };
++    }
++
++    const point: TrackPoint = {
++      lat: emaRef.current.lat,
++      lon: emaRef.current.lon,
+       ele: altitude ?? undefined,
+-      time,
++      time: pos.timestamp,
+     };
+ 
+-    // ✅ MAJ position temps réel (MARKER)
+-    if (setCurrentPosition) {
+-      setCurrentPosition(newPoint);
+-    }
++    const prev = pathRef.current[pathRef.current.length - 1];
+ 
+-    setUserPath((prev) => {
+-      if (prev.length > 0) {
+-        const last = prev[prev.length - 1];
+-        const dist = getDistanceKm(last, newPoint);
++    if (prev) {
++      const seg = haversineMeters(prev, point);
++      if (seg > JUMP_MAX_M) return; // saut GPS aberrant
+ 
+-        // ❌ filtre saut GPS
+-        if (dist > 0.1) return prev;
++      // Distance : accumulateur unique (source de vérité)
++      distanceKmRef.current += seg / 1000;
++      point.cumDist = distanceKmRef.current;
+ 
+-        // 🧠 LISSAGE léger (moyenne)
+-        newPoint.lat = (last.lat + newPoint.lat) / 2;
+-        newPoint.lon = (last.lon + newPoint.lon) / 2;
+-
+-        newPoint.cumDist = (last.cumDist ?? 0) + dist;
+-      } else {
+-        newPoint.cumDist = 0;
++      // Dénivelé positif filtré (buffer + seuil, comme le parser GPX)
++      if (prev.ele !== undefined && point.ele !== undefined) {
++        eleBufferRef.current += point.ele - prev.ele;
++        if (eleBufferRef.current > ELEVATION_THRESHOLD_M) {
++          elevationRef.current += eleBufferRef.current;
++          eleBufferRef.current = 0;
++        } else if (eleBufferRef.current < -ELEVATION_THRESHOLD_M) {
++          eleBufferRef.current = 0; // on ne compte que le D+
++        }
+       }
++    } else {
++      point.cumDist = 0;
++    }
+ 
+-      const newPath = [...prev, newPoint];
+-      savePath(newPath);
+-
+-      /* ----------- STATS ----------- */
+-
+-      if (newPath.length >= 2) {
+-        const last = newPath[newPath.length - 1];
+-        const prevPoint = newPath[newPath.length - 2];
+-        const dist = getDistanceKm(prevPoint, last);
+-
+-        setDistanceDone((d) => {
+-          const newDist = d + dist;
+-
+-          if (startTime.current) {
+-            const elapsedHours =
+-              (Date.now() - startTime.current) / 3600000;
++    pathRef.current = [...pathRef.current, point];
+ 
+-            if (elapsedHours > 0) {
+-              setAvgSpeed(newDist / elapsedHours);
+-            }
+-          }
++    // Vitesse moyenne
++    if (startTime.current) {
++      const hours = (Date.now() - startTime.current) / 3600000;
++      if (hours > 0) setAvgSpeed(distanceKmRef.current / hours);
++    }
+ 
+-          return newDist;
+-        });
++    // Marqueur temps réel
++    setCurrentPosition?.(point);
+ 
+-        if (last.ele !== undefined && prevPoint.ele !== undefined) {
+-          const diff = last.ele - prevPoint.ele;
+-          if (diff > 0) setElevationDone((e) => e + diff);
+-        }
+-      }
++    // Commit d'état (React 18 batch ces updates automatiquement)
++    setUserPath(pathRef.current);
++    setDistanceDone(distanceKmRef.current);
++    setElevationDone(elevationRef.current);
+ 
+-      return newPath;
+-    });
++    // Sauvegarde throttlée
++    const now = Date.now();
++    if (now - lastSavedRef.current > SAVE_INTERVAL_MS) {
++      lastSavedRef.current = now;
++      void savePath(pathRef.current);
++    }
+   };
+ 
+   const handleError = (err: GeolocationPositionError) => {
+-    if (err.code === err.TIMEOUT) {
+-      toast.warning("⏳ En attente du GPS…");
+-    } else {
+-      toast.error(err.message);
+-    }
++    if (err.code === err.TIMEOUT) toast.warning("En attente du GPS…");
++    else toast.error(err.message);
+   };
+ 
+   /* ------------------- CONTROLS ------------------- */
+-
+   const startTracking = () => {
+     if (!navigator.geolocation) {
+-      return toast.error("⚠️ Geolocation non supportée");
++      toast.error("Géolocalisation non supportée par ce navigateur");
++      return;
+     }
+ 
++    pathRef.current = [];
++    distanceKmRef.current = 0;
++    elevationRef.current = 0;
++    eleBufferRef.current = 0;
++    emaRef.current = null;
++    weakStreakRef.current = 0;
++    lastSavedRef.current = 0;
++    startTime.current = Date.now();
++
+     setUserPath([]);
+     setDistanceDone(0);
+     setElevationDone(0);
+     setAvgSpeed(0);
+-
+-    startTime.current = Date.now();
+     setIsTracking(true);
+ 
+-    requestWakeLock();
++    void requestWakeLock();
+ 
+     watchId.current = navigator.geolocation.watchPosition(
+       handlePosition,
+       handleError,
+-      {
+-        enableHighAccuracy: true,
+-        timeout: 10000,
+-        maximumAge: 1000,
+-      }
++      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
+     );
+   };
+ 
+   const stopTracking = () => {
+-    if (watchId.current) {
++    if (watchId.current !== null) {
+       navigator.geolocation.clearWatch(watchId.current);
++      watchId.current = null;
+     }
+-
+-    watchId.current = null;
+     setIsTracking(false);
+-    releaseWakeLock();
++    void releaseWakeLock();
++    void savePath(pathRef.current); // sauvegarde finale
+   };
+ 
+-  /* ------------------- CLEANUP ------------------- */
++  /* ------------------- Récupération après crash ------------------- */
++  const loadPath = () => loadStoredPath();
++  const resetPath = () => clearPath();
++
++  /* ------------------- Effets ------------------- */
++  // Réacquiert le wake lock quand l'app revient au premier plan
++  useEffect(() => {
++    const onVisible = () => {
++      if (document.visibilityState === "visible" && isTracking) {
++        void requestWakeLock();
++      }
++    };
++    document.addEventListener("visibilitychange", onVisible);
++    return () => document.removeEventListener("visibilitychange", onVisible);
++  }, [isTracking]);
+ 
++  // Nettoyage au démontage
+   useEffect(() => {
+     return () => {
+-      if (watchId.current) {
++      if (watchId.current !== null) {
+         navigator.geolocation.clearWatch(watchId.current);
+       }
+-      releaseWakeLock();
++      void releaseWakeLock();
+     };
+   }, []);
+ 
+@@ -217,5 +225,6 @@ export function useTracker(
+     startTracking,
+     stopTracking,
+     loadPath,
++    resetPath,
+   };
+-}
+\ No newline at end of file
++}
+diff --git a/src/lib/trackStore.ts b/src/lib/trackStore.ts
+new file mode 100644
+index 0000000..7f4ae11
+--- /dev/null
++++ b/src/lib/trackStore.ts
+@@ -0,0 +1,48 @@
++// src/lib/trackStore.ts
++// Persistance du tracé en cours via IndexedDB (idb).
++// Remplace localStorage : pas de limite ~5 Mo, pas de JSON.stringify bloquant.
++
++import { openDB, type DBSchema, type IDBPDatabase } from "idb";
++import type { TrackPoint } from "@/utils/gpxParser";
++
++interface TrackerDB extends DBSchema {
++  session: {
++    key: string;
++    value: { id: string; points: TrackPoint[]; updatedAt: number };
++  };
++}
++
++const DB_NAME = "trail-tracker";
++const STORE = "session";
++const CURRENT = "current";
++
++let dbPromise: Promise<IDBPDatabase<TrackerDB>> | null = null;
++
++function getDB() {
++  if (!dbPromise) {
++    dbPromise = openDB<TrackerDB>(DB_NAME, 1, {
++      upgrade(db) {
++        if (!db.objectStoreNames.contains(STORE)) {
++          db.createObjectStore(STORE, { keyPath: "id" });
++        }
++      },
++    });
++  }
++  return dbPromise;
++}
++
++export async function savePath(points: TrackPoint[]): Promise<void> {
++  const db = await getDB();
++  await db.put(STORE, { id: CURRENT, points, updatedAt: Date.now() });
++}
++
++export async function loadPath(): Promise<TrackPoint[]> {
++  const db = await getDB();
++  const rec = await db.get(STORE, CURRENT);
++  return rec?.points ?? [];
++}
++
++export async function clearPath(): Promise<void> {
++  const db = await getDB();
++  await db.delete(STORE, CURRENT);
++}
+diff --git a/src/utils/gpxParser.ts.backup b/src/utils/gpxParser.ts.backup
+deleted file mode 100644
+index c0b291d..0000000
+--- a/src/utils/gpxParser.ts.backup
++++ /dev/null
+@@ -1,78 +0,0 @@
+-export interface TrackPoint {
+-  lat: number;
+-  lon: number;
+-  ele?: number;
+-  time?: string;
+-}
+-
+-export interface GPXTrack {
+-  name: string;
+-  points: TrackPoint[];
+-  distance: number;
+-  elevationGain: number;
+-  elevationLoss: number;
+-}
+-
+-export const parseGPX = (gpxContent: string): GPXTrack => {
+-  const parser = new DOMParser();
+-  const xmlDoc = parser.parseFromString(gpxContent, "text/xml");
+-  
+-  const trackName = xmlDoc.querySelector("trk name")?.textContent || "Unnamed Track";
+-  const trackPoints = xmlDoc.querySelectorAll("trkpt");
+-  
+-  const points: TrackPoint[] = [];
+-  trackPoints.forEach((point) => {
+-    const lat = parseFloat(point.getAttribute("lat") || "0");
+-    const lon = parseFloat(point.getAttribute("lon") || "0");
+-    const ele = point.querySelector("ele")?.textContent;
+-    const time = point.querySelector("time")?.textContent;
+-    
+-    points.push({
+-      lat,
+-      lon,
+-      ele: ele ? parseFloat(ele) : undefined,
+-      time: time || undefined,
+-    });
+-  });
+-  
+-  // Calculate distance and elevation
+-  let distance = 0;
+-  let elevationGain = 0;
+-  let elevationLoss = 0;
+-  
+-  for (let i = 1; i < points.length; i++) {
+-    const prev = points[i - 1];
+-    const curr = points[i];
+-    
+-    // Calculate distance using Haversine formula
+-    const R = 6371000; // Earth's radius in meters
+-    const φ1 = (prev.lat * Math.PI) / 180;
+-    const φ2 = (curr.lat * Math.PI) / 180;
+-    const Δφ = ((curr.lat - prev.lat) * Math.PI) / 180;
+-    const Δλ = ((curr.lon - prev.lon) * Math.PI) / 180;
+-    
+-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+-              Math.cos(φ1) * Math.cos(φ2) *
+-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+-    distance += R * c;
+-    
+-    // Calculate elevation change
+-    if (prev.ele !== undefined && curr.ele !== undefined) {
+-      const elevDiff = curr.ele - prev.ele;
+-      if (elevDiff > 0) {
+-        elevationGain += elevDiff;
+-      } else {
+-        elevationLoss += Math.abs(elevDiff);
+-      }
+-    }
+-  }
+-  
+-  return {
+-    name: trackName,
+-    points,
+-    distance: Math.round(distance / 1000 * 100) / 100, // Convert to km
+-    elevationGain: Math.round(elevationGain),
+-    elevationLoss: Math.round(elevationLoss),
+-  };
+-};
+\ No newline at end of file
+diff --git a/src/utils/navigation.ts b/src/utils/navigation.ts
+new file mode 100644
+index 0000000..4caf69f
+--- /dev/null
++++ b/src/utils/navigation.ts
+@@ -0,0 +1,84 @@
++// src/utils/navigation.ts
++// Aides à la navigation sur une trace GPX importée :
++// point le plus proche, distance restante, détection "hors trace".
++
++import type { TrackPoint } from "@/utils/gpxParser";
++
++export interface NavInfo {
++  nearestIndex: number;      // index du point de trace le plus proche
++  distanceToTrackM: number;  // écart latéral à la trace (m)
++  remainingKm: number;       // distance restante jusqu'à l'arrivée (km)
++  progressRatio: number;     // 0 → 1 (avancement sur la trace)
++  currentCumDist: number;    // distance cumulée au point le plus proche (km)
++  offTrack: boolean;         // true si écart > seuil
++}
++
++const OFF_TRACK_THRESHOLD_M = 40;
++
++export function distanceMeters(a: TrackPoint, b: TrackPoint): number {
++  const R = 6371000;
++  const f1 = (a.lat * Math.PI) / 180;
++  const f2 = (b.lat * Math.PI) / 180;
++  const df = ((b.lat - a.lat) * Math.PI) / 180;
++  const dl = ((b.lon - a.lon) * Math.PI) / 180;
++  const h =
++    Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
++  return R * (2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
++}
++
++/**
++ * Calcule les informations de navigation pour une position donnée.
++ *
++ * `searchFrom` permet une recherche fenêtrée autour du dernier index connu
++ * (bien plus rapide qu'un balayage complet sur une longue trace). En cas
++ * d'écart important, on retombe sur un balayage complet pour se re-caler.
++ */
++export function computeNavInfo(
++  position: TrackPoint,
++  track: TrackPoint[],
++  searchFrom = 0
++): NavInfo | null {
++  if (track.length === 0) return null;
++
++  const totalKm = track[track.length - 1].cumDist ?? 0;
++
++  const scan = (start: number, end: number) => {
++    let bestIdx = start;
++    let bestDist = Infinity;
++    for (let i = start; i < end; i++) {
++      const d = distanceMeters(position, track[i]);
++      if (d < bestDist) {
++        bestDist = d;
++        bestIdx = i;
++      }
++    }
++    return { bestIdx, bestDist };
++  };
++
++  // Recherche fenêtrée autour du dernier point
++  const WINDOW = 150;
++  const lo = Math.max(0, searchFrom - WINDOW);
++  const hi = Math.min(track.length, searchFrom + WINDOW);
++  let { bestIdx, bestDist } = scan(lo, hi);
++
++  // Re-calage complet si on semble avoir quitté la fenêtre
++  if (bestDist > OFF_TRACK_THRESHOLD_M) {
++    const full = scan(0, track.length);
++    if (full.bestDist < bestDist) {
++      bestIdx = full.bestIdx;
++      bestDist = full.bestDist;
++    }
++  }
++
++  const currentCumDist = track[bestIdx].cumDist ?? 0;
++  const remainingKm = Math.max(0, totalKm - currentCumDist);
++
++  return {
++    nearestIndex: bestIdx,
++    distanceToTrackM: bestDist,
++    remainingKm,
++    progressRatio: totalKm > 0 ? currentCumDist / totalKm : 0,
++    currentCumDist,
++    offTrack: bestDist > OFF_TRACK_THRESHOLD_M,
++  };
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index da25c6d..8cce72c 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
+ import react from "@vitejs/plugin-react-swc";
+ import path from "path";
+ import { componentTagger } from "lovable-tagger";
++import { VitePWA } from "vite-plugin-pwa";
+ 
+ // https://vitejs.dev/config/
+ export default defineConfig(({ mode }) => ({
+@@ -9,10 +10,79 @@ export default defineConfig(({ mode }) => ({
+     host: "::",
+     port: 8080,
+   },
+-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
++  plugins: [
++    react(),
++    mode === "development" && componentTagger(),
++    VitePWA({
++      registerType: "autoUpdate",
++      includeAssets: ["favicon.ico", "apple-touch-icon.png"],
++      manifest: {
++        name: "Trail Navigator",
++        short_name: "Trail",
++        description: "Suivi GPS trail temps réel avec navigation sur trace GPX",
++        theme_color: "#0f172a",
++        background_color: "#0f172a",
++        display: "standalone",
++        orientation: "portrait",
++        scope: "/",
++        start_url: "/",
++        icons: [
++          { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
++          { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
++          {
++            src: "/pwa-512.png",
++            sizes: "512x512",
++            type: "image/png",
++            purpose: "maskable",
++          },
++        ],
++      },
++      workbox: {
++        // Le shell de l'app (JS/CSS) dépasse la limite par défaut de 2 Mo à
++        // cause de Mapbox GL. On la relève pour qu'il soit bien précaché
++        // (téléchargé une fois à l'installation), condition de l'usage hors-ligne.
++        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
++        // Le style Mapbox et les tuiles transitent par plusieurs domaines.
++        // On les met tous en cache pour permettre l'usage hors-ligne.
++        runtimeCaching: [
++          {
++            urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
++            handler: "CacheFirst",
++            options: {
++              cacheName: "mapbox-api",
++              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
++              cacheableResponse: { statuses: [0, 200] },
++            },
++          },
++          {
++            urlPattern: /^https:\/\/[a-z]+\.tiles\.mapbox\.com\/.*/i,
++            handler: "CacheFirst",
++            options: {
++              cacheName: "mapbox-tiles",
++              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 30 },
++              cacheableResponse: { statuses: [0, 200] },
++            },
++          },
++        ],
++      },
++    }),
++  ].filter(Boolean),
+   resolve: {
+     alias: {
+       "@": path.resolve(__dirname, "./src"),
+     },
+   },
++  build: {
++    // Sépare les grosses libs en chunks distincts : une mise à jour du code
++    // applicatif n'invalide plus le cache de Mapbox/recharts.
++    rollupOptions: {
++      output: {
++        manualChunks: {
++          mapbox: ["mapbox-gl"],
++          charts: ["recharts"],
++        },
++      },
++    },
++    chunkSizeWarningLimit: 2000,
++  },
+ }));

@@ -1,210 +1,218 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { TrackPoint } from "@/utils/gpxParser";
+import type { TrackPoint } from "@/utils/gpxParser";
+import { savePath, loadPath as loadStoredPath, clearPath } from "@/lib/trackStore";
 
 /* ------------------- Constantes ------------------- */
-const PATH_STORAGE_KEY = "currentPath";
+const ACCURACY_MAX_M = 25;        // rejet des fixes trop imprécis
+const JUMP_MAX_M = 100;           // rejet des sauts GPS aberrants
+const ELEVATION_THRESHOLD_M = 3;  // seuil anti-bruit pour le D+ (comme gpxParser)
+const EMA_ALPHA = 0.35;           // lissage exponentiel de la position
+const SAVE_INTERVAL_MS = 4000;    // fréquence max de sauvegarde IndexedDB
+const WEAK_SIGNAL_STREAK = 8;     // nb de fixes rejetés avant alerte
+
+/* ------------------- Utils géo ------------------- */
+function haversineMeters(p1: TrackPoint, p2: TrackPoint): number {
+  const R = 6371000;
+  const f1 = (p1.lat * Math.PI) / 180;
+  const f2 = (p2.lat * Math.PI) / 180;
+  const df = ((p2.lat - p1.lat) * Math.PI) / 180;
+  const dl = ((p2.lon - p1.lon) * Math.PI) / 180;
+  const a =
+    Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 /* ------------------- Hook principal ------------------- */
-export function useTracker(
-  setCurrentPosition?: (p: TrackPoint) => void // 👈 NOUVEAU
-) {
+export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
   const [isTracking, setIsTracking] = useState(false);
   const [userPath, setUserPath] = useState<TrackPoint[]>([]);
-  const [distanceDone, setDistanceDone] = useState(0);
-  const [elevationDone, setElevationDone] = useState(0);
-  const [avgSpeed, setAvgSpeed] = useState(0);
+  const [distanceDone, setDistanceDone] = useState(0); // km
+  const [elevationDone, setElevationDone] = useState(0); // m (D+)
+  const [avgSpeed, setAvgSpeed] = useState(0); // km/h
+
+  // Sources de vérité (refs) — évite les setState imbriqués
+  const pathRef = useRef<TrackPoint[]>([]);
+  const distanceKmRef = useRef(0);
+  const elevationRef = useRef(0);
+  const eleBufferRef = useRef(0);
+  const emaRef = useRef<{ lat: number; lon: number } | null>(null);
+  const lastSavedRef = useRef(0);
+  const weakStreakRef = useRef(0);
 
   const watchId = useRef<number | null>(null);
   const wakeLock = useRef<any>(null);
   const startTime = useRef<number | null>(null);
 
-  /* ------------------- UTILS ------------------- */
-
-  const getDistanceKm = (p1: TrackPoint, p2: TrackPoint) => {
-    const R = 6371;
-    const φ1 = (p1.lat * Math.PI) / 180;
-    const φ2 = (p2.lat * Math.PI) / 180;
-    const Δφ = ((p2.lat - p1.lat) * Math.PI) / 180;
-    const Δλ = ((p2.lon - p1.lon) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) ** 2 +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-
-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-  };
-
-  /* ------------------- LOCAL STORAGE ------------------- */
-
-  const savePath = (points: TrackPoint[]) => {
-    localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify(points));
-  };
-
-  const loadPath = (): TrackPoint[] => {
-    const data = localStorage.getItem(PATH_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  };
-
   /* ------------------- WAKE LOCK ------------------- */
-
   const requestWakeLock = async () => {
     try {
-      if (
-        "wakeLock" in navigator &&
-        typeof (navigator as any).wakeLock.request === "function"
-      ) {
+      if ("wakeLock" in navigator && (navigator as any).wakeLock?.request) {
         wakeLock.current = await (navigator as any).wakeLock.request("screen");
-
-        wakeLock.current.addEventListener("release", () => {
-          console.log("🔓 Wake Lock libéré");
-        });
-
-        console.log("✅ Wake Lock activé");
       }
     } catch (err) {
-      console.warn("⚠️ Wake Lock erreur :", err);
+      console.warn("Wake Lock indisponible :", err);
     }
   };
 
   const releaseWakeLock = async () => {
     try {
-      if (wakeLock.current) {
-        await wakeLock.current.release();
-        wakeLock.current = null;
-      }
+      await wakeLock.current?.release();
     } catch (err) {
-      console.warn("⚠️ Release Wake Lock erreur :", err);
+      console.warn("Release Wake Lock :", err);
+    } finally {
+      wakeLock.current = null;
     }
   };
 
   /* ------------------- GPS ------------------- */
-
   const handlePosition = (pos: GeolocationPosition) => {
     const { latitude, longitude, altitude, accuracy } = pos.coords;
-    const time = pos.timestamp;
 
-    // ❌ filtre précision GPS
-    if (accuracy > 25) return;
+    // Filtre précision, avec alerte si le signal reste faible
+    if (accuracy > ACCURACY_MAX_M) {
+      weakStreakRef.current += 1;
+      if (weakStreakRef.current === WEAK_SIGNAL_STREAK) {
+        toast.warning("Signal GPS faible — position peu fiable");
+      }
+      return;
+    }
+    weakStreakRef.current = 0;
 
-    const newPoint: TrackPoint = {
-      lat: latitude,
-      lon: longitude,
-      ele: altitude ?? undefined,
-      time,
-    };
-
-    // ✅ MAJ position temps réel (MARKER)
-    if (setCurrentPosition) {
-      setCurrentPosition(newPoint);
+    // Lissage exponentiel non destructif de la position
+    if (!emaRef.current) {
+      emaRef.current = { lat: latitude, lon: longitude };
+    } else {
+      emaRef.current = {
+        lat: EMA_ALPHA * latitude + (1 - EMA_ALPHA) * emaRef.current.lat,
+        lon: EMA_ALPHA * longitude + (1 - EMA_ALPHA) * emaRef.current.lon,
+      };
     }
 
-    setUserPath((prev) => {
-      if (prev.length > 0) {
-        const last = prev[prev.length - 1];
-        const dist = getDistanceKm(last, newPoint);
+    const point: TrackPoint = {
+      lat: emaRef.current.lat,
+      lon: emaRef.current.lon,
+      ele: altitude ?? undefined,
+      time: pos.timestamp,
+    };
 
-        // ❌ filtre saut GPS
-        if (dist > 0.1) return prev;
+    const prev = pathRef.current[pathRef.current.length - 1];
 
-        // 🧠 LISSAGE léger (moyenne)
-        newPoint.lat = (last.lat + newPoint.lat) / 2;
-        newPoint.lon = (last.lon + newPoint.lon) / 2;
+    if (prev) {
+      const seg = haversineMeters(prev, point);
+      if (seg > JUMP_MAX_M) return; // saut GPS aberrant
 
-        newPoint.cumDist = (last.cumDist ?? 0) + dist;
-      } else {
-        newPoint.cumDist = 0;
-      }
+      // Distance : accumulateur unique (source de vérité)
+      distanceKmRef.current += seg / 1000;
+      point.cumDist = distanceKmRef.current;
 
-      const newPath = [...prev, newPoint];
-      savePath(newPath);
-
-      /* ----------- STATS ----------- */
-
-      if (newPath.length >= 2) {
-        const last = newPath[newPath.length - 1];
-        const prevPoint = newPath[newPath.length - 2];
-        const dist = getDistanceKm(prevPoint, last);
-
-        setDistanceDone((d) => {
-          const newDist = d + dist;
-
-          if (startTime.current) {
-            const elapsedHours =
-              (Date.now() - startTime.current) / 3600000;
-
-            if (elapsedHours > 0) {
-              setAvgSpeed(newDist / elapsedHours);
-            }
-          }
-
-          return newDist;
-        });
-
-        if (last.ele !== undefined && prevPoint.ele !== undefined) {
-          const diff = last.ele - prevPoint.ele;
-          if (diff > 0) setElevationDone((e) => e + diff);
+      // Dénivelé positif filtré (buffer + seuil, comme le parser GPX)
+      if (prev.ele !== undefined && point.ele !== undefined) {
+        eleBufferRef.current += point.ele - prev.ele;
+        if (eleBufferRef.current > ELEVATION_THRESHOLD_M) {
+          elevationRef.current += eleBufferRef.current;
+          eleBufferRef.current = 0;
+        } else if (eleBufferRef.current < -ELEVATION_THRESHOLD_M) {
+          eleBufferRef.current = 0; // on ne compte que le D+
         }
       }
+    } else {
+      point.cumDist = 0;
+    }
 
-      return newPath;
-    });
+    pathRef.current = [...pathRef.current, point];
+
+    // Vitesse moyenne
+    if (startTime.current) {
+      const hours = (Date.now() - startTime.current) / 3600000;
+      if (hours > 0) setAvgSpeed(distanceKmRef.current / hours);
+    }
+
+    // Marqueur temps réel
+    setCurrentPosition?.(point);
+
+    // Commit d'état (React 18 batch ces updates automatiquement)
+    setUserPath(pathRef.current);
+    setDistanceDone(distanceKmRef.current);
+    setElevationDone(elevationRef.current);
+
+    // Sauvegarde throttlée
+    const now = Date.now();
+    if (now - lastSavedRef.current > SAVE_INTERVAL_MS) {
+      lastSavedRef.current = now;
+      void savePath(pathRef.current);
+    }
   };
 
   const handleError = (err: GeolocationPositionError) => {
-    if (err.code === err.TIMEOUT) {
-      toast.warning("⏳ En attente du GPS…");
-    } else {
-      toast.error(err.message);
-    }
+    if (err.code === err.TIMEOUT) toast.warning("En attente du GPS…");
+    else toast.error(err.message);
   };
 
   /* ------------------- CONTROLS ------------------- */
-
   const startTracking = () => {
     if (!navigator.geolocation) {
-      return toast.error("⚠️ Geolocation non supportée");
+      toast.error("Géolocalisation non supportée par ce navigateur");
+      return;
     }
+
+    pathRef.current = [];
+    distanceKmRef.current = 0;
+    elevationRef.current = 0;
+    eleBufferRef.current = 0;
+    emaRef.current = null;
+    weakStreakRef.current = 0;
+    lastSavedRef.current = 0;
+    startTime.current = Date.now();
 
     setUserPath([]);
     setDistanceDone(0);
     setElevationDone(0);
     setAvgSpeed(0);
-
-    startTime.current = Date.now();
     setIsTracking(true);
 
-    requestWakeLock();
+    void requestWakeLock();
 
     watchId.current = navigator.geolocation.watchPosition(
       handlePosition,
       handleError,
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 1000,
-      }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
     );
   };
 
   const stopTracking = () => {
-    if (watchId.current) {
+    if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
+      watchId.current = null;
     }
-
-    watchId.current = null;
     setIsTracking(false);
-    releaseWakeLock();
+    void releaseWakeLock();
+    void savePath(pathRef.current); // sauvegarde finale
   };
 
-  /* ------------------- CLEANUP ------------------- */
+  /* ------------------- Récupération après crash ------------------- */
+  const loadPath = () => loadStoredPath();
+  const resetPath = () => clearPath();
 
+  /* ------------------- Effets ------------------- */
+  // Réacquiert le wake lock quand l'app revient au premier plan
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && isTracking) {
+        void requestWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [isTracking]);
+
+  // Nettoyage au démontage
   useEffect(() => {
     return () => {
-      if (watchId.current) {
+      if (watchId.current !== null) {
         navigator.geolocation.clearWatch(watchId.current);
       }
-      releaseWakeLock();
+      void releaseWakeLock();
     };
   }, []);
 
@@ -217,5 +225,6 @@ export function useTracker(
     startTracking,
     stopTracking,
     loadPath,
+    resetPath,
   };
 }
