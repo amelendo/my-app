@@ -1,32 +1,64 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Mountain } from "lucide-react";
 import TrackUploader from "@/components/TrackUploader";
 import MapView from "@/components/MapView";
 import TrackStats from "@/components/TrackStats";
 import { parseGPX, GPXTrack } from "@/utils/gpxParser";
+import {
+  saveReferenceTrack,
+  loadReferenceTrack,
+  clearReferenceTrack,
+} from "@/lib/trackStore";
 import { toast } from "sonner";
 import heroImage from "@/assets/hero-trail.jpg";
 
 const Index = () => {
   const [currentTrack, setCurrentTrack] = useState<GPXTrack | null>(null);
+  const [restoring, setRestoring] = useState(true);
+
+  // Au démarrage : recharge la trace importée depuis IndexedDB
+  // (permet de la retrouver hors-ligne, après un rechargement/kill de l'onglet).
+  useEffect(() => {
+    let cancelled = false;
+    loadReferenceTrack()
+      .then((track) => {
+        if (!cancelled && track) {
+          setCurrentTrack(track);
+          toast.info(`Trace « ${track.name} » restaurée`);
+        }
+      })
+      .catch((err) => console.warn("Restauration de la trace impossible :", err))
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     try {
       const content = await file.text();
       const track = parseGPX(content);
       setCurrentTrack(track);
-      toast.success(`Track "${track.name}" loaded successfully!`);
+      void saveReferenceTrack(track); // persiste pour l'usage hors-ligne
+      toast.success(`Trace « ${track.name} » chargée !`);
     } catch (error) {
-      toast.error("Failed to parse GPX file. Please check the file format.");
+      toast.error("Échec de lecture du fichier GPX. Vérifiez le format.");
       console.error(error);
     }
+  };
+
+  const handleReset = () => {
+    setCurrentTrack(null);
+    void clearReferenceTrack();
   };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <header className="relative h-[400px] overflow-hidden">
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url(${heroImage})` }}
         >
@@ -38,7 +70,7 @@ const Index = () => {
             Trail Navigator
           </h1>
           <p className="text-xl text-white/90 max-w-2xl drop-shadow-md">
-            Upload your GPX tracks and navigate with real-time GPS positioning in the hills
+            Importez vos traces GPX et naviguez au GPS en temps réel sur les sentiers
           </p>
         </div>
       </header>
@@ -47,27 +79,27 @@ const Index = () => {
       <main className="container mx-auto px-4 py-12">
         {!currentTrack ? (
           <div className="max-w-2xl mx-auto">
-            <TrackUploader onFileUpload={handleFileUpload} />
+            {!restoring && <TrackUploader onFileUpload={handleFileUpload} />}
           </div>
         ) : (
           <div className="space-y-8">
             <div>
               <h2 className="text-3xl font-bold mb-2">{currentTrack.name}</h2>
               <p className="text-muted-foreground">
-                Track your position in real-time as you run
+                Suivez votre position en temps réel pendant votre course
               </p>
             </div>
-            
+
             <TrackStats track={currentTrack} />
-            
+
             <MapView track={currentTrack.points} trackName={currentTrack.name} />
-            
+
             <div className="flex justify-center">
               <button
-                onClick={() => setCurrentTrack(null)}
+                onClick={handleReset}
                 className="text-accent hover:text-accent/80 font-medium transition-colors"
               >
-                Upload another track
+                Importer une autre trace
               </button>
             </div>
           </div>

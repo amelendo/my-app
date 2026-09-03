@@ -46,20 +46,45 @@ export default defineConfig(({ mode }) => ({
         // On les met tous en cache pour permettre l'usage hors-ligne.
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
+            // Tuiles vectorielles / raster servies par api.mapbox.com/v4
+            urlPattern:
+              /^https:\/\/api\.mapbox\.com\/v4\/.*\.(?:pbf|mvt|png|webp|jpg)/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "mapbox-api",
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheName: "mapbox-tiles",
+              expiration: {
+                maxEntries: 3000,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true,
+              },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
           {
-            urlPattern: /^https:\/\/[a-z]+\.tiles\.mapbox\.com\/.*/i,
+            // Tuiles servies par les sous-domaines *.tiles.mapbox.com
+            urlPattern: /^https:\/\/[a-z0-9]+\.tiles\.mapbox\.com\/.*/i,
             handler: "CacheFirst",
             options: {
               cacheName: "mapbox-tiles",
-              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              expiration: {
+                maxEntries: 3000,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true,
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Style, sprites, glyphs (polices) — le reste de l'API Mapbox
+            urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "mapbox-api",
+              expiration: {
+                maxEntries: 400,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true,
+              },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
