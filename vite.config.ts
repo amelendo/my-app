@@ -53,7 +53,7 @@ export default defineConfig(({ mode }) => ({
             options: {
               cacheName: "mapbox-tiles",
               expiration: {
-                maxEntries: 3000,
+                maxEntries: 6000,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
                 purgeOnQuotaError: true,
               },
@@ -67,7 +67,7 @@ export default defineConfig(({ mode }) => ({
             options: {
               cacheName: "mapbox-tiles",
               expiration: {
-                maxEntries: 3000,
+                maxEntries: 6000,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
                 purgeOnQuotaError: true,
               },

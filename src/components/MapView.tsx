@@ -6,11 +6,22 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { TrackPoint } from "@/utils/gpxParser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Navigation, AlertTriangle, Download, X } from "lucide-react";
-import { exportToGpx } from "@/utils/exportGpx";
+import { Navigation, AlertTriangle, Download, X, Upload } from "lucide-react";
+import { exportToGpx, buildGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 import { computeNavInfo, type NavInfo } from "@/utils/navigation";
-import { prefetchArea } from "@/utils/prefetchTiles";
+import {
+  prefetchArea,
+  prefetchBounds,
+  estimateBounds,
+  gridAround,
+  type Estimate,
+} from "@/utils/prefetchTiles";
+import {
+  isStravaConnected,
+  connectStrava,
+  uploadToStrava,
+} from "@/lib/strava";
 import ElevationProfile from "@/components/ElevationProfile";
 import { toast } from "sonner";
 
@@ -22,6 +33,8 @@ interface MapViewProps {
 }
 
 const MapView = ({ track, trackName }: MapViewProps) => {
+  const freeMode = track.length === 0;
+
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapWrapper = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -36,6 +49,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     total: number;
   }>({ running: false, done: 0, total: 0 });
   const prefetchAbort = useRef<AbortController | null>(null);
+  const [prefetchRadius, setPrefetchRadius] = useState(3); // km, mode libre
+  const [zoneEstimate, setZoneEstimate] = useState<Estimate | null>(null);
+  const [hiRes, setHiRes] = useState(false); // ajoute le zoom 16
+  const [stravaUploading, setStravaUploading] = useState(false);
 
   const {
     isTracking,
@@ -54,37 +71,47 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   /* ---------------- MAP INIT ---------------- */
   useEffect(() => {
-    if (!mapContainer.current || track.length === 0) return;
+    if (!mapContainer.current) return;
 
     mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
+    // Centre initial : 1er point de la trace, sinon centre neutre (recentré au GPS)
+    const initialCenter: [number, number] = freeMode
+      ? [2.35, 46.6]
+      : [track[0].lon, track[0].lat];
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: MAP_STYLE,
-      center: [track[0].lon, track[0].lat],
-      zoom: 13,
+      center: initialCenter,
+      zoom: freeMode ? 5 : 13,
     });
 
     map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
 
     map.current.on("load", () => {
-      const coordinates = track.map((p) => [p.lon, p.lat]);
+      // Calque de la trace de référence (uniquement si trace présente)
+      if (!freeMode) {
+        map.current!.addSource("route", {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "LineString",
+              coordinates: track.map((p) => [p.lon, p.lat]),
+            },
+          },
+        });
+        map.current!.addLayer({
+          id: "route",
+          type: "line",
+          source: "route",
+          paint: { "line-color": "#ff5a1f", "line-width": 4 },
+        });
+      }
 
-      map.current!.addSource("route", {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          properties: {},
-          geometry: { type: "LineString", coordinates },
-        },
-      });
-      map.current!.addLayer({
-        id: "route",
-        type: "line",
-        source: "route",
-        paint: { "line-color": "#ff5a1f", "line-width": 4 },
-      });
-
+      // Calque du parcours enregistré (toujours présent)
       map.current!.addSource("userPath", {
         type: "geojson",
         data: {
@@ -103,10 +130,25 @@ const MapView = ({ track, trackName }: MapViewProps) => {
           "line-dasharray": [2, 2],
         },
       });
+
+      // En sortie libre : recentre sur la position GPS actuelle
+      if (freeMode && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) =>
+            map.current?.easeTo({
+              center: [pos.coords.longitude, pos.coords.latitude],
+              zoom: 14,
+            }),
+          () => {
+            /* pas de position : on reste sur le centre neutre */
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      }
     });
 
     return () => map.current?.remove();
-  }, [track]);
+  }, [track, freeMode]);
 
   /* ---------------- UPDATE PATH ---------------- */
   useEffect(() => {
@@ -146,13 +188,15 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       duration: 500,
     });
 
-    // Navigation : distance restante + hors-trace
-    const info = computeNavInfo(currentPosition, track, lastNearest.current);
-    if (info) {
-      lastNearest.current = info.nearestIndex;
-      setNav(info);
+    // Navigation : distance restante + hors-trace (seulement avec une trace)
+    if (!freeMode) {
+      const info = computeNavInfo(currentPosition, track, lastNearest.current);
+      if (info) {
+        lastNearest.current = info.nearestIndex;
+        setNav(info);
+      }
     }
-  }, [currentPosition, track]);
+  }, [currentPosition, track, freeMode]);
 
   /* ---------------- PLEIN ÉCRAN (mode course) ---------------- */
   const enterFullscreen = () => {
@@ -212,16 +256,32 @@ const MapView = ({ track, trackName }: MapViewProps) => {
       toast.error("Token Mapbox manquant.");
       return;
     }
+
+    // Points cibles : le corridor de la trace, ou une grille autour de la position
+    let points = track;
+    if (freeMode) {
+      const center = await resolvePosition();
+      if (!center) {
+        toast.error("Position GPS indisponible pour le téléchargement.");
+        return;
+      }
+      points = gridAround(center, prefetchRadius); // rayon réglable autour de vous
+    }
+
     const controller = new AbortController();
     prefetchAbort.current = controller;
     setPrefetch({ running: true, done: 0, total: 0 });
-    toast.info("Téléchargement de la carte de la zone…");
+    toast.info(
+      freeMode
+        ? "Téléchargement de la carte autour de vous…"
+        : "Téléchargement de la carte de la zone…"
+    );
 
     try {
       const res = await prefetchArea({
         token,
         style: MAP_STYLE,
-        points: track,
+        points,
         zooms: [13, 14, 15],
         signal: controller.signal,
         onProgress: (done, total) =>
@@ -234,7 +294,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         toast.success(
           res.capped
             ? `Zone partiellement téléchargée (${res.done} tuiles, limite atteinte).`
-            : `Carte de la zone disponible hors-ligne (${res.done} tuiles).`
+            : `Carte disponible hors-ligne (${res.done} tuiles).`
         );
       }
     } catch (err) {
@@ -246,7 +306,113 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     }
   };
 
+  // Renvoie la position courante (celle du suivi, sinon un fix GPS ponctuel)
+  const resolvePosition = (): Promise<{ lat: number; lon: number } | null> => {
+    if (currentPosition) {
+      return Promise.resolve({
+        lat: currentPosition.lat,
+        lon: currentPosition.lon,
+      });
+    }
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+  };
+
+  /* ---------------- TÉLÉCHARGEMENT ZONE VISIBLE ---------------- */
+  const zoneZooms = () => (hiRes ? [13, 14, 15, 16] : [13, 14, 15]);
+
+  const currentBounds = () => {
+    const b = map.current?.getBounds();
+    if (!b) return null;
+    return {
+      west: b.getWest(),
+      east: b.getEast(),
+      south: b.getSouth(),
+      north: b.getNorth(),
+    };
+  };
+
+  // Recalcule l'estimation (à l'ouverture du panneau et au changement de détail)
+  const refreshEstimate = () => {
+    const b = currentBounds();
+    if (b) setZoneEstimate(estimateBounds(b, zoneZooms()));
+  };
+
+  const openZonePanel = () => {
+    refreshEstimate();
+  };
+
+  const downloadZone = async () => {
+    const token = import.meta.env.VITE_MAPBOX_TOKEN;
+    const b = currentBounds();
+    if (!token || !b) {
+      toast.error("Zone indisponible.");
+      return;
+    }
+    setZoneEstimate(null);
+    const controller = new AbortController();
+    prefetchAbort.current = controller;
+    setPrefetch({ running: true, done: 0, total: 0 });
+    toast.info("Téléchargement de la zone visible…");
+
+    try {
+      const res = await prefetchBounds({
+        token,
+        style: MAP_STYLE,
+        bounds: b,
+        zooms: zoneZooms(),
+        maxTiles: 5000,
+        signal: controller.signal,
+        onProgress: (done, total) => setPrefetch({ running: true, done, total }),
+      });
+      if (res.aborted) toast.message("Téléchargement interrompu.");
+      else
+        toast.success(
+          res.capped
+            ? `Zone partiellement téléchargée (${res.done} tuiles, limite atteinte).`
+            : `Zone disponible hors-ligne (${res.done} tuiles).`
+        );
+    } catch (err) {
+      console.error(err);
+      toast.error("Échec du téléchargement de la zone.");
+    } finally {
+      prefetchAbort.current = null;
+      setPrefetch({ running: false, done: 0, total: 0 });
+    }
+  };
+
   const cancelPrefetch = () => prefetchAbort.current?.abort();
+
+  /* ---------------- ENVOI VERS STRAVA ---------------- */
+  const handleStravaUpload = async () => {
+    if (!isStravaConnected()) {
+      toast.info("Connexion à Strava…");
+      connectStrava(); // redirige vers Strava, revient avec ?code=
+      return;
+    }
+    setStravaUploading(true);
+    toast.info("Envoi vers Strava…");
+    try {
+      const gpx = buildGpx(userPath, `${trackName}_run`);
+      const res = await uploadToStrava(gpx, `${trackName} — Trail Navigator`);
+      if (res.activityId) {
+        toast.success("Activité publiée sur Strava !");
+      } else {
+        toast.success(`Envoyé à Strava (${res.status}).`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Échec de l'envoi vers Strava");
+    } finally {
+      setStravaUploading(false);
+    }
+  };
 
   /* ---------------- UI ---------------- */
   return (
@@ -257,7 +423,9 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
           <div className="absolute top-4 left-4 z-10 w-52">
             <Card className="p-3 bg-card/95 space-y-2">
-              <h3 className="font-semibold text-sm">{trackName}</h3>
+              <h3 className="font-semibold text-sm">
+                {freeMode ? "Sortie libre" : trackName}
+              </h3>
 
               <Button
                 size="sm"
@@ -271,15 +439,37 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
               {/* Téléchargement hors-ligne de la zone */}
               {!prefetch.running ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={startPrefetch}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Carte hors-ligne
-                </Button>
+                <div className="space-y-1.5">
+                  {freeMode && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground mr-1">
+                        Rayon
+                      </span>
+                      {[3, 5, 10].map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setPrefetchRadius(r)}
+                          className={`flex-1 rounded px-1.5 py-0.5 text-xs border transition-colors ${
+                            prefetchRadius === r
+                              ? "bg-accent text-accent-foreground border-accent"
+                              : "border-border hover:bg-muted"
+                          }`}
+                        >
+                          {r} km
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={startPrefetch}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Carte hors-ligne
+                  </Button>
+                </div>
               ) : (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
@@ -310,6 +500,67 @@ const MapView = ({ track, trackName }: MapViewProps) => {
                 </div>
               )}
 
+              {/* Télécharger la zone visible (rectangle cadré à l'écran) */}
+              {!prefetch.running && !zoneEstimate && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={openZonePanel}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Zone visible
+                </Button>
+              )}
+
+              {!prefetch.running && zoneEstimate && (
+                <div className="space-y-2 rounded-md border border-border p-2">
+                  <p className="text-xs">
+                    ≈ <b>{zoneEstimate.tiles}</b> tuiles ·{" "}
+                    <b>~{zoneEstimate.megabytes} Mo</b> · ~{zoneEstimate.minutes} min
+                  </p>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hiRes}
+                      onChange={(e) => {
+                        setHiRes(e.target.checked);
+                        const b = currentBounds();
+                        if (b)
+                          setZoneEstimate(
+                            estimateBounds(
+                              b,
+                              e.target.checked ? [13, 14, 15, 16] : [13, 14, 15]
+                            )
+                          );
+                      }}
+                    />
+                    Haute résolution (zoom 16)
+                  </label>
+                  {zoneEstimate.tiles > 3000 && (
+                    <p className="text-xs text-destructive">
+                      Zone volumineuse : une partie pourrait être purgée du cache.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={downloadZone}
+                    >
+                      Télécharger
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setZoneEstimate(null)}
+                    >
+                      Annuler
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {isTracking && (
                 <div className="text-sm space-y-1">
                   <p><b>{distanceDone.toFixed(2)} km</b> parcourus</p>
@@ -333,14 +584,29 @@ const MapView = ({ track, trackName }: MapViewProps) => {
               )}
 
               {!isTracking && userPath.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => exportToGpx(userPath, `${trackName}_run`)}
-                >
-                  Export GPX
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => exportToGpx(userPath, `${trackName}_run`)}
+                  >
+                    Export GPX
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#fc4c02] hover:bg-[#e34402] text-white"
+                    onClick={handleStravaUpload}
+                    disabled={stravaUploading}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    {stravaUploading
+                      ? "Envoi…"
+                      : isStravaConnected()
+                      ? "Envoyer vers Strava"
+                      : "Connecter Strava"}
+                  </Button>
+                </div>
               )}
             </Card>
           </div>
@@ -357,7 +623,9 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         </div>
       </Card>
 
-      <ElevationProfile track={track} currentCumDist={nav?.currentCumDist} />
+      {!freeMode && (
+        <ElevationProfile track={track} currentCumDist={nav?.currentCumDist} />
+      )}
     </div>
   );
 };

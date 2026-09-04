@@ -1,23 +1,37 @@
 import { useEffect, useState } from "react";
-import { Mountain } from "lucide-react";
+import { Mountain, Play } from "lucide-react";
 import TrackUploader from "@/components/TrackUploader";
 import MapView from "@/components/MapView";
 import TrackStats from "@/components/TrackStats";
-import { parseGPX, GPXTrack } from "@/utils/gpxParser";
+import { Button } from "@/components/ui/button";
+import { parseGPX, GPXTrack, TrackPoint } from "@/utils/gpxParser";
 import {
   saveReferenceTrack,
   loadReferenceTrack,
   clearReferenceTrack,
 } from "@/lib/trackStore";
+import { handleStravaRedirect } from "@/lib/strava";
 import { toast } from "sonner";
 import heroImage from "@/assets/hero-trail.jpg";
 
+// Référence stable : évite de réinitialiser la carte à chaque rendu en mode libre
+const EMPTY_POINTS: TrackPoint[] = [];
+
 const Index = () => {
   const [currentTrack, setCurrentTrack] = useState<GPXTrack | null>(null);
+  const [freeRun, setFreeRun] = useState(false);
   const [restoring, setRestoring] = useState(true);
 
+  // Retour OAuth Strava : si l'URL contient ?code=..., on finalise la connexion
+  useEffect(() => {
+    handleStravaRedirect()
+      .then((connected) => {
+        if (connected) toast.success("Compte Strava connecté !");
+      })
+      .catch((err) => toast.error(err.message ?? "Connexion Strava échouée"));
+  }, []);
+
   // Au démarrage : recharge la trace importée depuis IndexedDB
-  // (permet de la retrouver hors-ligne, après un rechargement/kill de l'onglet).
   useEffect(() => {
     let cancelled = false;
     loadReferenceTrack()
@@ -41,7 +55,7 @@ const Index = () => {
       const content = await file.text();
       const track = parseGPX(content);
       setCurrentTrack(track);
-      void saveReferenceTrack(track); // persiste pour l'usage hors-ligne
+      void saveReferenceTrack(track);
       toast.success(`Trace « ${track.name} » chargée !`);
     } catch (error) {
       toast.error("Échec de lecture du fichier GPX. Vérifiez le format.");
@@ -51,8 +65,11 @@ const Index = () => {
 
   const handleReset = () => {
     setCurrentTrack(null);
+    setFreeRun(false);
     void clearReferenceTrack();
   };
+
+  const showMap = currentTrack || freeRun;
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,29 +94,55 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12">
-        {!currentTrack ? (
-          <div className="max-w-2xl mx-auto">
-            {!restoring && <TrackUploader onFileUpload={handleFileUpload} />}
+        {!showMap ? (
+          <div className="max-w-2xl mx-auto space-y-6">
+            {!restoring && (
+              <>
+                <TrackUploader onFileUpload={handleFileUpload} />
+
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-sm">ou</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full h-14 text-base"
+                  onClick={() => setFreeRun(true)}
+                >
+                  <Play className="h-5 w-5 mr-2" />
+                  Sortie libre (sans trace)
+                </Button>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-8">
             <div>
-              <h2 className="text-3xl font-bold mb-2">{currentTrack.name}</h2>
+              <h2 className="text-3xl font-bold mb-2">
+                {currentTrack ? currentTrack.name : "Sortie libre"}
+              </h2>
               <p className="text-muted-foreground">
-                Suivez votre position en temps réel pendant votre course
+                {currentTrack
+                  ? "Suivez votre position en temps réel pendant votre course"
+                  : "Enregistrez votre parcours au fil de votre sortie"}
               </p>
             </div>
 
-            <TrackStats track={currentTrack} />
+            {currentTrack && <TrackStats track={currentTrack} />}
 
-            <MapView track={currentTrack.points} trackName={currentTrack.name} />
+            <MapView
+              track={currentTrack ? currentTrack.points : EMPTY_POINTS}
+              trackName={currentTrack ? currentTrack.name : "Sortie libre"}
+            />
 
             <div className="flex justify-center">
               <button
                 onClick={handleReset}
                 className="text-accent hover:text-accent/80 font-medium transition-colors"
               >
-                Importer une autre trace
+                {currentTrack ? "Importer une autre trace" : "Terminer la sortie"}
               </button>
             </div>
           </div>
