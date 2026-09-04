@@ -10,7 +10,6 @@ import {
   loadReferenceTrack,
   clearReferenceTrack,
 } from "@/lib/trackStore";
-import { handleStravaRedirect } from "@/lib/strava";
 import { toast } from "sonner";
 import heroImage from "@/assets/hero-trail.jpg";
 
@@ -21,15 +20,6 @@ const Index = () => {
   const [currentTrack, setCurrentTrack] = useState<GPXTrack | null>(null);
   const [freeRun, setFreeRun] = useState(false);
   const [restoring, setRestoring] = useState(true);
-
-  // Retour OAuth Strava : si l'URL contient ?code=..., on finalise la connexion
-  useEffect(() => {
-    handleStravaRedirect()
-      .then((connected) => {
-        if (connected) toast.success("Compte Strava connecté !");
-      })
-      .catch((err) => toast.error(err.message ?? "Connexion Strava échouée"));
-  }, []);
 
   // Au démarrage : recharge la trace importée depuis IndexedDB
   useEffect(() => {

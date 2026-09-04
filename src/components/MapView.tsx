@@ -7,7 +7,7 @@ import type { TrackPoint } from "@/utils/gpxParser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Navigation, AlertTriangle, Download, X, Upload } from "lucide-react";
-import { exportToGpx, buildGpx } from "@/utils/exportGpx";
+import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 import { computeNavInfo, type NavInfo } from "@/utils/navigation";
 import {
@@ -17,11 +17,6 @@ import {
   gridAround,
   type Estimate,
 } from "@/utils/prefetchTiles";
-import {
-  isStravaConnected,
-  connectStrava,
-  uploadToStrava,
-} from "@/lib/strava";
 import ElevationProfile from "@/components/ElevationProfile";
 import { toast } from "sonner";
 
@@ -52,7 +47,6 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   const [prefetchRadius, setPrefetchRadius] = useState(3); // km, mode libre
   const [zoneEstimate, setZoneEstimate] = useState<Estimate | null>(null);
   const [hiRes, setHiRes] = useState(false); // ajoute le zoom 16
-  const [stravaUploading, setStravaUploading] = useState(false);
 
   const {
     isTracking,
@@ -390,28 +384,14 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   const cancelPrefetch = () => prefetchAbort.current?.abort();
 
-  /* ---------------- ENVOI VERS STRAVA ---------------- */
-  const handleStravaUpload = async () => {
-    if (!isStravaConnected()) {
-      toast.info("Connexion à Strava…");
-      connectStrava(); // redirige vers Strava, revient avec ?code=
-      return;
-    }
-    setStravaUploading(true);
-    toast.info("Envoi vers Strava…");
-    try {
-      const gpx = buildGpx(userPath, `${trackName}_run`);
-      const res = await uploadToStrava(gpx, `${trackName} — Trail Navigator`);
-      if (res.activityId) {
-        toast.success("Activité publiée sur Strava !");
-      } else {
-        toast.success(`Envoyé à Strava (${res.status}).`);
-      }
-    } catch (err: any) {
-      toast.error(err?.message ?? "Échec de l'envoi vers Strava");
-    } finally {
-      setStravaUploading(false);
-    }
+  /* ---------------- EXPORT POUR STRAVA (manuel) ---------------- */
+  // L'API Strava est désormais réservée aux abonnés payants. On télécharge
+  // donc le GPX et on ouvre la page d'import Strava : l'utilisateur y dépose
+  // le fichier. Gratuit, sans OAuth ni serverless.
+  const handleExportForStrava = () => {
+    exportToGpx(userPath, `${trackName}_run`);
+    toast.info("GPX téléchargé — déposez-le sur la page Strava qui s'ouvre.");
+    window.open("https://www.strava.com/upload/select", "_blank", "noopener");
   };
 
   /* ---------------- UI ---------------- */
@@ -596,15 +576,10 @@ const MapView = ({ track, trackName }: MapViewProps) => {
                   <Button
                     size="sm"
                     className="w-full bg-[#fc4c02] hover:bg-[#e34402] text-white"
-                    onClick={handleStravaUpload}
-                    disabled={stravaUploading}
+                    onClick={handleExportForStrava}
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    {stravaUploading
-                      ? "Envoi…"
-                      : isStravaConnected()
-                      ? "Envoyer vers Strava"
-                      : "Connecter Strava"}
+                    Exporter pour Strava
                   </Button>
                 </div>
               )}
