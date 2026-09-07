@@ -192,67 +192,28 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     }
   }, [currentPosition, track, freeMode]);
 
-  /* ---------------- PLEIN ÉCRAN (mode course) ---------------- */
-  // App installée (PWA) : déjà sans barre de navigateur en permanence, même
-  // après verrouillage. Le Fullscreen API en plus est fragile (le système
-  // l'annule au verrouillage) et inutile ici. On ne l'utilise donc QUE dans
-  // le navigateur classique (app non installée).
-  const isStandalone = () =>
-    typeof window !== "undefined" &&
-    (window.matchMedia?.("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true);
-
-  const enterFullscreen = () => {
-    if (isStandalone()) return; // déjà plein écran natif
-    const el = mapWrapper.current;
-    if (!el) return;
-    try {
-      if (el.requestFullscreen) void el.requestFullscreen();
-      else if ((el as any).webkitRequestFullscreen)
-        (el as any).webkitRequestFullscreen();
-      // iOS Safari : non supporté sur un <div> → ignoré silencieusement
-    } catch {
-      /* plein écran indisponible : le suivi fonctionne quand même */
-    }
-  };
-
-  const exitFullscreen = () => {
-    if (isStandalone()) return;
-    try {
-      if (document.fullscreenElement && document.exitFullscreen)
-        void document.exitFullscreen();
-      else if (
-        (document as any).webkitFullscreenElement &&
-        (document as any).webkitExitFullscreen
-      )
-        (document as any).webkitExitFullscreen();
-    } catch {
-      /* ignore */
-    }
-  };
+  /* ---------------- MODE COURSE (plein écran CSS) ---------------- */
+  // On n'utilise plus le Fullscreen API du navigateur : Android l'annule au
+  // verrouillage et ne peut pas le réactiver seul. À la place, un "mode course"
+  // géré en CSS fait occuper 100% de l'écran à la carte. Avantage : il SURVIT
+  // au verrouillage (ce n'est que de la mise en page, pas une permission).
+  const [raceMode, setRaceMode] = useState(false);
 
   const handleStart = () => {
     startTracking();
-    enterFullscreen();
+    setRaceMode(true);
   };
 
   const handleStop = () => {
     stopTracking();
-    exitFullscreen();
+    setRaceMode(false);
   };
 
-  // La carte doit se recalculer quand on entre/sort du plein écran
+  // La carte doit se recalculer quand on entre/sort du mode course
   useEffect(() => {
-    const onFsChange = () => {
-      setTimeout(() => map.current?.resize(), 120);
-    };
-    document.addEventListener("fullscreenchange", onFsChange);
-    document.addEventListener("webkitfullscreenchange", onFsChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFsChange);
-      document.removeEventListener("webkitfullscreenchange", onFsChange);
-    };
-  }, []);
+    const t = setTimeout(() => map.current?.resize(), 150);
+    return () => clearTimeout(t);
+  }, [raceMode]);
 
   /* ---------------- PREFETCH TUILES ---------------- */
   const startPrefetch = async () => {
@@ -409,7 +370,14 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   return (
     <div className="space-y-4">
       <Card className="overflow-hidden">
-        <div ref={mapWrapper} className="relative h-[600px] bg-background">
+        <div
+          ref={mapWrapper}
+          className={
+            raceMode
+              ? "fixed inset-0 z-[100] bg-background"
+              : "relative h-[600px] bg-background"
+          }
+        >
           <div ref={mapContainer} className="absolute inset-0" />
 
           <div className="absolute top-4 left-4 z-10 w-52">
