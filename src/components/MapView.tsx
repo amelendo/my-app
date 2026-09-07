@@ -19,6 +19,8 @@ import {
 } from "@/utils/prefetchTiles";
 import ElevationProfile from "@/components/ElevationProfile";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { saveRun } from "@/lib/runs";
 
 const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 
@@ -198,15 +200,40 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   // géré en CSS fait occuper 100% de l'écran à la carte. Avantage : il SURVIT
   // au verrouillage (ce n'est que de la mise en page, pas une permission).
   const [raceMode, setRaceMode] = useState(false);
+  const { session } = useAuth();
+  const startedAtRef = useRef<number | null>(null);
 
   const handleStart = () => {
+    startedAtRef.current = Date.now();
     startTracking();
     setRaceMode(true);
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     stopTracking();
     setRaceMode(false);
+
+    // Sauvegarde sur le compte si connecté et sortie non vide
+    if (session && userPath.length > 1) {
+      try {
+        const durationS = startedAtRef.current
+          ? Math.round((Date.now() - startedAtRef.current) / 1000)
+          : 0;
+        await saveRun({
+          name: freeMode ? "Sortie libre" : trackName,
+          startedAt: startedAtRef.current ?? Date.now(),
+          durationS,
+          distanceKm: distanceDone,
+          elevationM: elevationDone,
+          points: userPath,
+        });
+        toast.success("Sortie enregistrée dans « Mes sorties ».");
+      } catch (e: any) {
+        toast.error(e?.message ?? "Échec de l'enregistrement de la sortie");
+      }
+    } else if (!session && userPath.length > 1) {
+      toast.info("Connectez-vous pour enregistrer vos sorties.");
+    }
   };
 
   // La carte doit se recalculer quand on entre/sort du mode course
