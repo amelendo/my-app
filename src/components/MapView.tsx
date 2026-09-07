@@ -193,7 +193,17 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   }, [currentPosition, track, freeMode]);
 
   /* ---------------- PLEIN ÉCRAN (mode course) ---------------- */
+  // App installée (PWA) : déjà sans barre de navigateur en permanence, même
+  // après verrouillage. Le Fullscreen API en plus est fragile (le système
+  // l'annule au verrouillage) et inutile ici. On ne l'utilise donc QUE dans
+  // le navigateur classique (app non installée).
+  const isStandalone = () =>
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true);
+
   const enterFullscreen = () => {
+    if (isStandalone()) return; // déjà plein écran natif
     const el = mapWrapper.current;
     if (!el) return;
     try {
@@ -207,6 +217,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
   };
 
   const exitFullscreen = () => {
+    if (isStandalone()) return;
     try {
       if (document.fullscreenElement && document.exitFullscreen)
         void document.exitFullscreen();
