@@ -28,12 +28,21 @@ export const parseGPX = (gpxContent: string): GPXTrack => {
   const xmlDoc = parser.parseFromString(gpxContent, "text/xml");
 
   const trackName =
-    xmlDoc.querySelector("trk name")?.textContent || "Unnamed Track";
-  const trackPoints = xmlDoc.querySelectorAll("trkpt");
+    xmlDoc.querySelector("trk name")?.textContent ||
+    xmlDoc.querySelector("rte name")?.textContent ||
+    xmlDoc.querySelector("metadata name")?.textContent ||
+    "Parcours";
+
+  // Un GPX peut décrire le parcours de trois façons. On prend la première
+  // qui contient des points : trace enregistrée (trkpt), itinéraire proposé
+  // (rtept), ou à défaut des waypoints (wpt).
+  let rawPoints = xmlDoc.querySelectorAll("trkpt");
+  if (rawPoints.length === 0) rawPoints = xmlDoc.querySelectorAll("rtept");
+  if (rawPoints.length === 0) rawPoints = xmlDoc.querySelectorAll("wpt");
 
   const points: TrackPoint[] = [];
 
-  trackPoints.forEach((point) => {
+  rawPoints.forEach((point) => {
     const lat = parseFloat(point.getAttribute("lat") || "0");
     const lon = parseFloat(point.getAttribute("lon") || "0");
     const ele = point.querySelector("ele")?.textContent;
@@ -46,6 +55,12 @@ export const parseGPX = (gpxContent: string): GPXTrack => {
       time: time || undefined,
     });
   });
+
+  if (points.length === 0) {
+    throw new Error(
+      "Aucun point trouvé dans le fichier GPX (ni trace, ni itinéraire)."
+    );
+  }
 
   // --- Calcul cumulatif distance / altitude ---
   let distance = 0; // total (m)
