@@ -9,8 +9,11 @@ import {
   saveReferenceTrack,
   loadReferenceTrack,
   clearReferenceTrack,
+  getActiveSession,
+  endSession,
 } from "@/lib/trackStore";
 import { toast } from "sonner";
+import type { TrackPoint as TP } from "@/utils/gpxParser";
 import heroImage from "@/assets/hero-trail.jpg";
 
 // Référence stable : évite de réinitialiser la carte à chaque rendu en mode libre
@@ -20,6 +23,33 @@ const Index = () => {
   const [currentTrack, setCurrentTrack] = useState<GPXTrack | null>(null);
   const [freeRun, setFreeRun] = useState(false);
   const [restoring, setRestoring] = useState(true);
+  const [recover, setRecover] = useState<{
+    points: TP[];
+    freeMode: boolean;
+  } | null>(null);
+  const [resumeInitial, setResumeInitial] = useState<TP[] | undefined>();
+
+  // Détecte une course interrompue (app tuée/suspendue) au lancement
+  useEffect(() => {
+    getActiveSession()
+      .then((s) => {
+        if (s) setRecover(s);
+      })
+      .catch(() => {});
+  }, []);
+
+  const acceptRecovery = () => {
+    if (!recover) return;
+    setResumeInitial(recover.points);
+    if (recover.freeMode) setFreeRun(true);
+    // en mode trace, la trace de référence est restaurée par ailleurs
+    setRecover(null);
+  };
+
+  const dismissRecovery = () => {
+    void endSession();
+    setRecover(null);
+  };
 
   // Au démarrage : recharge la trace importée depuis IndexedDB
   useEffect(() => {
@@ -84,6 +114,24 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12">
+        {recover && (
+          <div className="max-w-2xl mx-auto mb-6 rounded-lg border border-accent bg-accent/10 p-4">
+            <p className="font-semibold mb-1">Sortie interrompue détectée</p>
+            <p className="text-sm text-muted-foreground mb-3">
+              Une course n'a pas été arrêtée correctement. Vous pouvez la
+              reprendre pour ne pas perdre le tracé déjà enregistré.
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={acceptRecovery}>
+                Reprendre la sortie
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissRecovery}>
+                Ignorer
+              </Button>
+            </div>
+          </div>
+        )}
+
         {!showMap ? (
           <div className="max-w-2xl mx-auto space-y-6">
             {!restoring && (
@@ -125,6 +173,7 @@ const Index = () => {
             <MapView
               track={currentTrack ? currentTrack.points : EMPTY_POINTS}
               trackName={currentTrack ? currentTrack.name : "Sortie libre"}
+              resumeInitial={resumeInitial}
             />
 
             <div className="flex justify-center">

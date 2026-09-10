@@ -6,7 +6,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { TrackPoint } from "@/utils/gpxParser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Navigation, AlertTriangle, Download, X, Upload } from "lucide-react";
+import { Navigation, AlertTriangle, Download, X, Upload, Pause, Play } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 import { computeNavInfo, type NavInfo } from "@/utils/navigation";
@@ -27,9 +27,10 @@ const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 interface MapViewProps {
   track: TrackPoint[];
   trackName: string;
+  resumeInitial?: TrackPoint[]; // tracé à reprendre (course interrompue)
 }
 
-const MapView = ({ track, trackName }: MapViewProps) => {
+const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
   const freeMode = track.length === 0;
 
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -52,12 +53,16 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   const {
     isTracking,
+    isPaused,
     userPath,
     distanceDone,
     elevationDone,
     avgSpeed,
     startTracking,
     stopTracking,
+    pauseTracking,
+    resumeTracking,
+    resumeSession,
   } = useTracker(setCurrentPosition);
 
   const totalKm = useMemo(
@@ -205,7 +210,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
   const handleStart = () => {
     startedAtRef.current = Date.now();
-    startTracking();
+    startTracking(freeMode);
     setRaceMode(true);
   };
 
@@ -241,6 +246,17 @@ const MapView = ({ track, trackName }: MapViewProps) => {
     const t = setTimeout(() => map.current?.resize(), 150);
     return () => clearTimeout(t);
   }, [raceMode]);
+
+  // Reprise d'une course interrompue : restaure le tracé et relance le suivi
+  useEffect(() => {
+    if (resumeInitial && resumeInitial.length > 1) {
+      startedAtRef.current = Date.now();
+      resumeSession(resumeInitial);
+      setRaceMode(true);
+      toast.success("Sortie reprise — enregistrement relancé.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ---------------- PREFETCH TUILES ---------------- */
   const startPrefetch = async () => {
@@ -407,8 +423,8 @@ const MapView = ({ track, trackName }: MapViewProps) => {
         >
           <div ref={mapContainer} className="absolute inset-0" />
 
-          <div className="absolute top-4 left-4 z-10 w-52">
-            <Card className="p-3 bg-card/95 space-y-2">
+          <div className="absolute top-4 left-4 z-10 w-64 sm:w-72 max-w-[calc(100%-2rem)]">
+            <Card className="p-4 bg-card/95 space-y-2.5">
               <h3 className="font-semibold text-sm">
                 {freeMode ? "Sortie libre" : trackName}
               </h3>
@@ -423,19 +439,46 @@ const MapView = ({ track, trackName }: MapViewProps) => {
                 {isTracking ? "Stop" : "Start"}
               </Button>
 
+              {isTracking && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={isPaused ? resumeTracking : pauseTracking}
+                >
+                  {isPaused ? (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Reprendre
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="h-4 w-4 mr-2" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {isPaused && (
+                <p className="text-sm text-center text-accent font-medium">
+                  ⏸ En pause
+                </p>
+              )}
+
               {/* Téléchargement hors-ligne de la zone */}
               {!prefetch.running ? (
                 <div className="space-y-1.5">
                   {freeMode && (
                     <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground mr-1">
+                      <span className="text-sm text-muted-foreground mr-1">
                         Rayon
                       </span>
                       {[3, 5, 10].map((r) => (
                         <button
                           key={r}
                           onClick={() => setPrefetchRadius(r)}
-                          className={`flex-1 rounded px-1.5 py-0.5 text-xs border transition-colors ${
+                          className={`flex-1 rounded px-2 py-1 text-sm border transition-colors ${
                             prefetchRadius === r
                               ? "bg-accent text-accent-foreground border-accent"
                               : "border-border hover:bg-muted"
@@ -458,7 +501,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-sm">
                     <span>
                       Téléchargement…{" "}
                       {prefetch.total
@@ -501,11 +544,11 @@ const MapView = ({ track, trackName }: MapViewProps) => {
 
               {!prefetch.running && zoneEstimate && (
                 <div className="space-y-2 rounded-md border border-border p-2">
-                  <p className="text-xs">
+                  <p className="text-sm">
                     ≈ <b>{zoneEstimate.tiles}</b> tuiles ·{" "}
                     <b>~{zoneEstimate.megabytes} Mo</b> · ~{zoneEstimate.minutes} min
                   </p>
-                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
                     <input
                       type="checkbox"
                       checked={hiRes}
@@ -524,7 +567,7 @@ const MapView = ({ track, trackName }: MapViewProps) => {
                     Haute résolution (zoom 16)
                   </label>
                   {zoneEstimate.tiles > 3000 && (
-                    <p className="text-xs text-destructive">
+                    <p className="text-sm text-destructive">
                       Zone volumineuse : une partie pourrait être purgée du cache.
                     </p>
                   )}
