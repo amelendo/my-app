@@ -54,6 +54,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
   const {
     isTracking,
     isPaused,
+    wakeActive,
     userPath,
     distanceDone,
     elevationDone,
@@ -212,6 +213,9 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
     startedAtRef.current = Date.now();
     startTracking(freeMode);
     setRaceMode(true);
+    toast.info("Gardez l'écran allumé pour un suivi continu.", {
+      duration: 5000,
+    });
   };
 
   const handleStop = async () => {
@@ -464,6 +468,27 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 <p className="text-sm text-center text-accent font-medium">
                   ⏸ En pause
                 </p>
+              )}
+
+              {isTracking && !isPaused && (
+                <div
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs ${
+                    wakeActive
+                      ? "bg-green-500/10 text-green-700"
+                      : "bg-destructive/10 text-destructive"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      wakeActive ? "bg-green-500" : "bg-destructive"
+                    }`}
+                  />
+                  <span>
+                    {wakeActive
+                      ? "Écran maintenu actif"
+                      : "Écran non maintenu — ne verrouillez pas"}
+                  </span>
+                </div>
               )}
 
               {/* Téléchargement hors-ligne de la zone */}

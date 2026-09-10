@@ -27,6 +27,7 @@ function haversineMeters(p1: TrackPoint, p2: TrackPoint): number {
 export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
   const [isTracking, setIsTracking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [wakeActive, setWakeActive] = useState(false); // écran maintenu allumé
   const [userPath, setUserPath] = useState<TrackPoint[]>([]);
   const [distanceDone, setDistanceDone] = useState(0); // km
   const [elevationDone, setElevationDone] = useState(0); // m (D+)
@@ -56,8 +57,14 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
     try {
       if ("wakeLock" in navigator && (navigator as any).wakeLock?.request) {
         wakeLock.current = await (navigator as any).wakeLock.request("screen");
+        setWakeActive(true);
+        // Le verrou peut être relâché par le système (écran éteint, onglet caché)
+        wakeLock.current.addEventListener?.("release", () => {
+          setWakeActive(false);
+        });
       }
     } catch (err) {
+      setWakeActive(false);
       console.warn("Wake Lock indisponible :", err);
     }
   };
@@ -69,6 +76,7 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
       console.warn("Release Wake Lock :", err);
     } finally {
       wakeLock.current = null;
+      setWakeActive(false);
     }
   };
 
@@ -307,13 +315,27 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
   // Réacquiert le wake lock quand l'app revient au premier plan
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === "visible" && isTracking) {
+      if (document.visibilityState === "visible" && isTracking && !isPaused) {
         void requestWakeLock();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [isTracking]);
+  }, [isTracking, isPaused]);
+
+  // Réacquisition périodique : si le verrou a été relâché, on le reprend
+  useEffect(() => {
+    if (!isTracking || isPaused) return;
+    const id = setInterval(() => {
+      if (
+        document.visibilityState === "visible" &&
+        (!wakeLock.current || wakeLock.current.released)
+      ) {
+        void requestWakeLock();
+      }
+    }, 15000);
+    return () => clearInterval(id);
+  }, [isTracking, isPaused]);
 
   // Nettoyage au démontage
   useEffect(() => {
@@ -328,6 +350,7 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
   return {
     isTracking,
     isPaused,
+    wakeActive,
     userPath,
     distanceDone,
     elevationDone,
