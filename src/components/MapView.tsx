@@ -459,17 +459,14 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           <div ref={mapContainer} className="absolute inset-0" />
 
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
-          {/* Vue DONNÉES (plein écran, fond sombre, style course) */}
+          {/* Vue DONNÉES (plein écran, réparti, style course) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col">
-              {/* Bandeau haut : statut */}
-              <div className="px-5 pt-5 flex items-center justify-between text-sm">
-                <span className="font-medium truncate">
-                  {freeMode ? "Sortie libre" : trackName}
-                </span>
-                <span className="flex items-center gap-1.5">
+            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
+              {/* Haut : statut + bascule Carte bien visible */}
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm">
                   <span
-                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    className={`inline-block h-3 w-3 rounded-full ${
                       isPaused
                         ? "bg-amber-400"
                         : wakeActive
@@ -481,38 +478,47 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     {isPaused ? "En pause" : wakeActive ? "Actif" : "Écran ?"}
                   </span>
                 </span>
+                <button
+                  onClick={() => {
+                    setView("map");
+                    setTimeout(() => map.current?.resize(), 100);
+                  }}
+                  className="flex items-center gap-2 rounded-full bg-white/15 hover:bg-white/25 px-4 py-2 text-sm font-semibold"
+                >
+                  <MapIcon className="h-5 w-5" />
+                  Carte
+                </button>
               </div>
 
-              {/* Deux chiffres dominants */}
-              <div className="flex-1 flex flex-col justify-center px-5">
+              {/* Centre : chiffres répartis sur toute la hauteur */}
+              <div className="flex-1 flex flex-col justify-evenly">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center">
-                    <p className="text-[15px] uppercase tracking-widest text-white/50">
+                    <p className="text-sm uppercase tracking-widest text-white/50">
                       Distance
                     </p>
-                    <p className="text-7xl font-bold tabular-nums leading-none mt-1">
+                    <p className="text-7xl font-bold tabular-nums leading-none mt-2">
                       {distanceDone.toFixed(2)}
                     </p>
                     <p className="text-white/50 mt-1">km</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[15px] uppercase tracking-widest text-white/50">
+                    <p className="text-sm uppercase tracking-widest text-white/50">
                       Allure
                     </p>
-                    <p className="text-7xl font-bold tabular-nums leading-none mt-1">
+                    <p className="text-7xl font-bold tabular-nums leading-none mt-2">
                       {formatPace(avgSpeed)}
                     </p>
                     <p className="text-white/50 mt-1">min/km</p>
                   </div>
                 </div>
 
-                {/* Ligne secondaire : D+, durée, (restant) */}
-                <div className="mt-10 grid grid-cols-3 gap-3 text-center border-t border-white/10 pt-6">
+                <div className="grid grid-cols-3 gap-3 text-center border-t border-white/10 pt-6">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       D+
                     </p>
-                    <p className="text-3xl font-semibold tabular-nums">
+                    <p className="text-4xl font-semibold tabular-nums mt-1">
                       {Math.round(elevationDone)}
                     </p>
                   </div>
@@ -520,7 +526,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       Durée
                     </p>
-                    <p className="text-3xl font-semibold tabular-nums">
+                    <p className="text-4xl font-semibold tabular-nums mt-1">
                       {formatDuration(getMovingMs())}
                     </p>
                   </div>
@@ -528,7 +534,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       {freeMode ? "Vitesse" : "Restant"}
                     </p>
-                    <p className="text-3xl font-semibold tabular-nums">
+                    <p className="text-4xl font-semibold tabular-nums mt-1">
                       {freeMode
                         ? avgSpeed.toFixed(1)
                         : nav
@@ -539,42 +545,30 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </div>
 
                 {!freeMode && nav?.offTrack && (
-                  <p className="text-center text-red-400 mt-4 font-medium">
+                  <p className="text-center text-red-400 font-medium">
                     ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
                   </p>
                 )}
               </div>
 
-              {/* Gros boutons tactiles */}
-              <div className="p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={isPaused ? resumeTracking : pauseTracking}
-                    className="h-16 rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-lg font-semibold"
-                  >
-                    {isPaused ? (
-                      <><Play className="h-6 w-6" />Reprendre</>
-                    ) : (
-                      <><Pause className="h-6 w-6" />Pause</>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleStop}
-                    className="h-16 rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-lg font-semibold"
-                  >
-                    <Navigation className="h-6 w-6" />
-                    Stop
-                  </button>
-                </div>
+              {/* Bas : gros boutons tactiles */}
+              <div className="grid grid-cols-2 gap-3 pb-1">
                 <button
-                  onClick={() => {
-                    setView("map");
-                    setTimeout(() => map.current?.resize(), 100);
-                  }}
-                  className="w-full h-12 rounded-xl border border-white/20 hover:bg-white/10 flex items-center justify-center gap-2 text-base"
+                  onClick={isPaused ? resumeTracking : pauseTracking}
+                  className="h-20 rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-xl font-semibold"
                 >
-                  <MapIcon className="h-5 w-5" />
-                  Voir la carte
+                  {isPaused ? (
+                    <><Play className="h-7 w-7" />Reprendre</>
+                  ) : (
+                    <><Pause className="h-7 w-7" />Pause</>
+                  )}
+                </button>
+                <button
+                  onClick={handleStop}
+                  className="h-20 rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-xl font-semibold"
+                >
+                  <Navigation className="h-7 w-7" />
+                  Stop
                 </button>
               </div>
             </div>
