@@ -459,111 +459,123 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           <div ref={mapContainer} className="absolute inset-0" />
 
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
+          {/* Vue DONNÉES (plein écran, fond sombre, style course) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 bg-background flex flex-col">
-              <div className="flex-1 flex flex-col justify-center px-6 py-8 gap-6">
-                <div className="grid grid-cols-2 gap-6 text-center">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col">
+              {/* Bandeau haut : statut */}
+              <div className="px-5 pt-5 flex items-center justify-between text-sm">
+                <span className="font-medium truncate">
+                  {freeMode ? "Sortie libre" : trackName}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                      isPaused
+                        ? "bg-amber-400"
+                        : wakeActive
+                        ? "bg-green-400"
+                        : "bg-red-400"
+                    }`}
+                  />
+                  <span className="text-white/70">
+                    {isPaused ? "En pause" : wakeActive ? "Actif" : "Écran ?"}
+                  </span>
+                </span>
+              </div>
+
+              {/* Deux chiffres dominants */}
+              <div className="flex-1 flex flex-col justify-center px-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <p className="text-[15px] uppercase tracking-widest text-white/50">
                       Distance
                     </p>
-                    <p className="text-5xl font-bold tabular-nums">
+                    <p className="text-7xl font-bold tabular-nums leading-none mt-1">
                       {distanceDone.toFixed(2)}
                     </p>
-                    <p className="text-sm text-muted-foreground">km</p>
+                    <p className="text-white/50 mt-1">km</p>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <div className="text-center">
+                    <p className="text-[15px] uppercase tracking-widest text-white/50">
                       Allure
                     </p>
-                    <p className="text-5xl font-bold tabular-nums">
+                    <p className="text-7xl font-bold tabular-nums leading-none mt-1">
                       {formatPace(avgSpeed)}
                     </p>
-                    <p className="text-sm text-muted-foreground">min/km</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Dénivelé +
-                    </p>
-                    <p className="text-5xl font-bold tabular-nums">
-                      {Math.round(elevationDone)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">m</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Durée
-                    </p>
-                    <p className="text-5xl font-bold tabular-nums">
-                      {formatDuration(getMovingMs())}
-                    </p>
-                    <p className="text-sm text-muted-foreground">&nbsp;</p>
+                    <p className="text-white/50 mt-1">min/km</p>
                   </div>
                 </div>
 
-                {!freeMode && nav && (
-                  <div className="text-center border-t pt-5">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Distance restante
+                {/* Ligne secondaire : D+, durée, (restant) */}
+                <div className="mt-10 grid grid-cols-3 gap-3 text-center border-t border-white/10 pt-6">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-white/50">
+                      D+
                     </p>
-                    <p className="text-4xl font-bold tabular-nums">
-                      {nav.remainingKm.toFixed(2)}{" "}
-                      <span className="text-lg font-normal text-muted-foreground">
-                        km
-                      </span>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {Math.round(elevationDone)}
                     </p>
-                    {nav.offTrack && (
-                      <p className="text-sm text-destructive mt-1">
-                        ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
-                      </p>
-                    )}
                   </div>
-                )}
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-white/50">
+                      Durée
+                    </p>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {formatDuration(getMovingMs())}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-white/50">
+                      {freeMode ? "Vitesse" : "Restant"}
+                    </p>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {freeMode
+                        ? avgSpeed.toFixed(1)
+                        : nav
+                        ? nav.remainingKm.toFixed(1)
+                        : "--"}
+                    </p>
+                  </div>
+                </div>
 
-                {isPaused && (
-                  <p className="text-center text-accent font-medium">⏸ En pause</p>
-                )}
-                {!isPaused && !wakeActive && (
-                  <p className="text-center text-destructive text-sm">
-                    Écran non maintenu — ne verrouillez pas
+                {!freeMode && nav?.offTrack && (
+                  <p className="text-center text-red-400 mt-4 font-medium">
+                    ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
                   </p>
                 )}
               </div>
 
-              {/* Commandes en bas */}
-              <div className="p-4 space-y-2 border-t bg-card/60">
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    variant="secondary"
+              {/* Gros boutons tactiles */}
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
                     onClick={isPaused ? resumeTracking : pauseTracking}
+                    className="h-16 rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-lg font-semibold"
                   >
                     {isPaused ? (
-                      <><Play className="h-4 w-4 mr-2" />Reprendre</>
+                      <><Play className="h-6 w-6" />Reprendre</>
                     ) : (
-                      <><Pause className="h-4 w-4 mr-2" />Pause</>
+                      <><Pause className="h-6 w-6" />Pause</>
                     )}
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    variant="destructive"
+                  </button>
+                  <button
                     onClick={handleStop}
+                    className="h-16 rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-lg font-semibold"
                   >
-                    <Navigation className="h-4 w-4 mr-2" />
+                    <Navigation className="h-6 w-6" />
                     Stop
-                  </Button>
+                  </button>
                 </div>
-                <Button
-                  className="w-full"
-                  variant="outline"
+                <button
                   onClick={() => {
                     setView("map");
                     setTimeout(() => map.current?.resize(), 100);
                   }}
+                  className="w-full h-12 rounded-xl border border-white/20 hover:bg-white/10 flex items-center justify-center gap-2 text-base"
                 >
-                  <MapIcon className="h-4 w-4 mr-2" />
+                  <MapIcon className="h-5 w-5" />
                   Voir la carte
-                </Button>
+                </button>
               </div>
             </div>
           )}
