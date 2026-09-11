@@ -6,7 +6,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { TrackPoint } from "@/utils/gpxParser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Navigation, AlertTriangle, Download, X, Upload, Pause, Play } from "lucide-react";
+import { Navigation, AlertTriangle, Download, X, Upload, Pause, Play, Map as MapIcon, Gauge } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 import { computeNavInfo, type NavInfo } from "@/utils/navigation";
@@ -64,6 +64,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
     pauseTracking,
     resumeTracking,
     resumeSession,
+    getMovingMs,
   } = useTracker(setCurrentPosition);
 
   const totalKm = useMemo(
@@ -206,13 +207,23 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
   // géré en CSS fait occuper 100% de l'écran à la carte. Avantage : il SURVIT
   // au verrouillage (ce n'est que de la mise en page, pas une permission).
   const [raceMode, setRaceMode] = useState(false);
+  const [view, setView] = useState<"data" | "map">("data"); // vue par défaut : données
+  const [, setTick] = useState(0); // rafraîchit le chrono chaque seconde
   const { session } = useAuth();
   const startedAtRef = useRef<number | null>(null);
+
+  // Chrono : rafraîchit l'affichage chaque seconde pendant la course
+  useEffect(() => {
+    if (!isTracking || isPaused) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isTracking, isPaused]);
 
   const handleStart = () => {
     startedAtRef.current = Date.now();
     startTracking(freeMode);
     setRaceMode(true);
+    setView("data");
     toast.info("Gardez l'écran allumé pour un suivi continu.", {
       duration: 5000,
     });
@@ -257,6 +268,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
       startedAtRef.current = Date.now();
       resumeSession(resumeInitial);
       setRaceMode(true);
+      setView("data");
       toast.success("Sortie reprise — enregistrement relancé.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,6 +425,25 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
     window.open("https://www.strava.com/upload/select", "_blank", "noopener");
   };
 
+  /* ---------------- FORMATAGE DONNÉES ---------------- */
+  const formatPace = (kmh: number) => {
+    if (!kmh || kmh < 0.3) return "--:--";
+    const minPerKm = 60 / kmh;
+    const m = Math.floor(minPerKm);
+    const s = Math.round((minPerKm - m) * 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const formatDuration = (ms: number) => {
+    const total = Math.floor(ms / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+      : `${m}:${String(s).padStart(2, "0")}`;
+  };
+
   /* ---------------- UI ---------------- */
   return (
     <div className="space-y-4">
@@ -426,6 +457,116 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           }
         >
           <div ref={mapContainer} className="absolute inset-0" />
+
+          {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
+          {raceMode && view === "data" && (
+            <div className="absolute inset-0 z-20 bg-background flex flex-col">
+              <div className="flex-1 flex flex-col justify-center px-6 py-8 gap-6">
+                <div className="grid grid-cols-2 gap-6 text-center">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Distance
+                    </p>
+                    <p className="text-5xl font-bold tabular-nums">
+                      {distanceDone.toFixed(2)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">km</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Allure
+                    </p>
+                    <p className="text-5xl font-bold tabular-nums">
+                      {formatPace(avgSpeed)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">min/km</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Dénivelé +
+                    </p>
+                    <p className="text-5xl font-bold tabular-nums">
+                      {Math.round(elevationDone)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">m</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Durée
+                    </p>
+                    <p className="text-5xl font-bold tabular-nums">
+                      {formatDuration(getMovingMs())}
+                    </p>
+                    <p className="text-sm text-muted-foreground">&nbsp;</p>
+                  </div>
+                </div>
+
+                {!freeMode && nav && (
+                  <div className="text-center border-t pt-5">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Distance restante
+                    </p>
+                    <p className="text-4xl font-bold tabular-nums">
+                      {nav.remainingKm.toFixed(2)}{" "}
+                      <span className="text-lg font-normal text-muted-foreground">
+                        km
+                      </span>
+                    </p>
+                    {nav.offTrack && (
+                      <p className="text-sm text-destructive mt-1">
+                        ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {isPaused && (
+                  <p className="text-center text-accent font-medium">⏸ En pause</p>
+                )}
+                {!isPaused && !wakeActive && (
+                  <p className="text-center text-destructive text-sm">
+                    Écran non maintenu — ne verrouillez pas
+                  </p>
+                )}
+              </div>
+
+              {/* Commandes en bas */}
+              <div className="p-4 space-y-2 border-t bg-card/60">
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    variant="secondary"
+                    onClick={isPaused ? resumeTracking : pauseTracking}
+                  >
+                    {isPaused ? (
+                      <><Play className="h-4 w-4 mr-2" />Reprendre</>
+                    ) : (
+                      <><Pause className="h-4 w-4 mr-2" />Pause</>
+                    )}
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    variant="destructive"
+                    onClick={handleStop}
+                  >
+                    <Navigation className="h-4 w-4 mr-2" />
+                    Stop
+                  </Button>
+                </div>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => {
+                    setView("map");
+                    setTimeout(() => map.current?.resize(), 100);
+                  }}
+                >
+                  <MapIcon className="h-4 w-4 mr-2" />
+                  Voir la carte
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="absolute top-4 left-4 z-10 w-64 sm:w-72 max-w-[calc(100%-2rem)]">
             <Card className="p-4 bg-card/95 space-y-2.5">
@@ -442,6 +583,18 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 <Navigation className="h-4 w-4 mr-2" />
                 {isTracking ? "Stop" : "Start"}
               </Button>
+
+              {raceMode && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setView("data")}
+                >
+                  <Gauge className="h-4 w-4 mr-2" />
+                  Données
+                </Button>
+              )}
 
               {isTracking && (
                 <Button

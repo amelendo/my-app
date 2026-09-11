@@ -311,6 +311,11 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
   const loadPath = () => loadStoredPath();
   const resetPath = () => endSession();
 
+  // Temps réellement en mouvement (hors pauses), en millisecondes
+  const getMovingMs = () =>
+    movingAccumRef.current +
+    (segStartRef.current ? Date.now() - segStartRef.current : 0);
+
   /* ------------------- Effets ------------------- */
   // Réacquiert le wake lock quand l'app revient au premier plan
   useEffect(() => {
@@ -360,6 +365,7 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
     pauseTracking,
     resumeTracking,
     resumeSession,
+    getMovingMs,
     loadPath,
     resetPath,
   };
