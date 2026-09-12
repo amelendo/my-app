@@ -568,6 +568,8 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                   onPointerUp={cancelHold}
                   onPointerLeave={cancelHold}
                   onPointerCancel={cancelHold}
+                  onContextMenu={(e) => e.preventDefault()}
+                  style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
                   className="relative h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-red-600/90 overflow-hidden flex flex-col items-center justify-center gap-1.5 font-semibold select-none touch-none"
                 >
                   <span
