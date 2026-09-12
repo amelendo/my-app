@@ -239,8 +239,19 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
         const durationS = startedAtRef.current
           ? Math.round((Date.now() - startedAtRef.current) / 1000)
           : 0;
+        const now = new Date();
+        const dateStr = now.toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+        const timeStr = now.toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const base = freeMode ? "Trail" : trackName;
         await saveRun({
-          name: freeMode ? "Sortie libre" : trackName,
+          name: `${base} – ${dateStr} ${timeStr}`,
           startedAt: startedAtRef.current ?? Date.now(),
           durationS,
           distanceKm: distanceDone,
