@@ -498,9 +498,9 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
           {/* Vue DONNÉES — centrée sur l'action (Pause / Stop / Carte) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col justify-center gap-8 p-5">
-              {/* Statut discret en haut */}
-              <div className="flex justify-center">
+            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
+              {/* Statut, en haut */}
+              <div className="flex justify-center shrink-0">
                 <span className="flex items-center gap-2 text-xs text-white/60">
                   <span
                     className={`inline-block h-2.5 w-2.5 rounded-full ${
@@ -515,10 +515,11 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </span>
               </div>
 
-              {/* Chiffres — bloc compact et centré */}
-              <div className="grid grid-cols-2 gap-6 text-center">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
+              {/* Chiffres — centrés dans l'espace disponible */}
+              <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                <div className="w-full grid grid-cols-2 gap-6 text-center">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
                   <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
                     {formatDuration(getMovingMs())}
                   </p>
@@ -559,9 +560,10 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                   ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
                 </p>
               )}
+              </div>
 
-              {/* Trois boutons de taille identique */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Trois boutons de taille identique, en bas */}
+              <div className="grid grid-cols-3 gap-2 shrink-0">
                 <button
                   onClick={isPaused ? resumeTracking : pauseTracking}
                   className="h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex flex-col items-center justify-center gap-1.5 font-semibold"
