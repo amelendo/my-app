@@ -515,8 +515,9 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </span>
               </div>
 
-              {/* Chiffres — répartis pour remplir la zone centrale */}
-              <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-x-6 content-evenly place-items-center text-center py-4">
+              {/* Chiffres — bloc compact centré */}
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-full grid grid-cols-2 gap-x-6 gap-y-8 text-center">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
                   <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
@@ -551,6 +552,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                   <p className="text-xs text-white/40 -mt-1">
                     {freeMode ? "m" : "km"}
                   </p>
+                </div>
                 </div>
               </div>
 
