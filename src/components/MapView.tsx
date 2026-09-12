@@ -515,11 +515,10 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </span>
               </div>
 
-              {/* Chiffres — centrés dans l'espace disponible */}
-              <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                <div className="w-full grid grid-cols-2 gap-6 text-center">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
+              {/* Chiffres — répartis pour remplir la zone centrale */}
+              <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-x-6 content-evenly place-items-center text-center py-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
                   <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
                     {formatDuration(getMovingMs())}
                   </p>
@@ -560,7 +559,6 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                   ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
                 </p>
               )}
-              </div>
 
               {/* Trois boutons de taille identique, en bas */}
               <div className="grid grid-cols-3 gap-2 shrink-0">
