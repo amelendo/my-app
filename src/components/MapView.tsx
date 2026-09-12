@@ -444,6 +444,32 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
       : `${m}:${String(s).padStart(2, "0")}`;
   };
 
+  /* ---------------- STOP À APPUI MAINTENU ---------------- */
+  const HOLD_MS = 1200;
+  const holdRaf = useRef<number | null>(null);
+  const [holdProgress, setHoldProgress] = useState(0);
+
+  const startHold = () => {
+    const t0 = Date.now();
+    const tick = () => {
+      const p = Math.min(1, (Date.now() - t0) / HOLD_MS);
+      setHoldProgress(p);
+      if (p >= 1) {
+        cancelHold();
+        handleStop();
+      } else {
+        holdRaf.current = requestAnimationFrame(tick);
+      }
+    };
+    holdRaf.current = requestAnimationFrame(tick);
+  };
+
+  const cancelHold = () => {
+    if (holdRaf.current) cancelAnimationFrame(holdRaf.current);
+    holdRaf.current = null;
+    setHoldProgress(0);
+  };
+
   /* ---------------- UI ---------------- */
   return (
     <div className="space-y-4">
@@ -459,10 +485,10 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           <div ref={mapContainer} className="absolute inset-0" />
 
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
-          {/* Vue DONNÉES (plein écran, réparti, style course) */}
+          {/* Vue DONNÉES — hiérarchie type app de course */}
           {raceMode && view === "data" && (
             <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
-              {/* Haut : statut + bascule Carte bien visible */}
+              {/* Haut : statut + bascule Carte */}
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm">
                   <span
@@ -490,85 +516,96 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </button>
               </div>
 
-              {/* Centre : chiffres répartis sur toute la hauteur */}
-              <div className="flex-1 flex flex-col justify-evenly">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <p className="text-sm uppercase tracking-widest text-white/50">
-                      Distance
-                    </p>
-                    <p className="text-[clamp(3rem,15vw,5rem)] font-bold tabular-nums leading-none mt-2">
-                      {distanceDone.toFixed(2)}
-                    </p>
-                    <p className="text-white/50 mt-1">km</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm uppercase tracking-widest text-white/50">
-                      Allure
-                    </p>
-                    <p className="text-[clamp(3rem,15vw,5rem)] font-bold tabular-nums leading-none mt-2">
-                      {formatPace(avgSpeed)}
-                    </p>
-                    <p className="text-white/50 mt-1">min/km</p>
-                  </div>
-                </div>
+              {/* Chiffre roi : le chrono */}
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <p className="text-sm uppercase tracking-[0.2em] text-white/50">
+                  Durée
+                </p>
+                <p className="text-[clamp(4rem,22vw,7rem)] font-bold tabular-nums leading-none mt-1">
+                  {formatDuration(getMovingMs())}
+                </p>
+              </div>
 
-                <div className="grid grid-cols-3 gap-3 text-center border-t border-white/10 pt-6">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-white/50">
-                      D+
-                    </p>
-                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
-                      {Math.round(elevationDone)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-white/50">
-                      Durée
-                    </p>
-                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
-                      {formatDuration(getMovingMs())}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-white/50">
-                      {freeMode ? "Vitesse" : "Restant"}
-                    </p>
-                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
-                      {freeMode
-                        ? avgSpeed.toFixed(1)
-                        : nav
-                        ? nav.remainingKm.toFixed(1)
-                        : "--"}
-                    </p>
-                  </div>
-                </div>
-
-                {!freeMode && nav?.offTrack && (
-                  <p className="text-center text-red-400 font-medium">
-                    ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
+              {/* Métriques secondaires */}
+              <div
+                className={`grid ${
+                  freeMode ? "grid-cols-3" : "grid-cols-2"
+                } gap-y-6 gap-x-4 text-center border-t border-white/10 pt-6`}
+              >
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-white/50">
+                    Distance
                   </p>
+                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                    {distanceDone.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-white/40">km</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-white/50">
+                    Allure
+                  </p>
+                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                    {formatPace(avgSpeed)}
+                  </p>
+                  <p className="text-xs text-white/40">min/km</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-white/50">
+                    D+
+                  </p>
+                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                    {Math.round(elevationDone)}
+                  </p>
+                  <p className="text-xs text-white/40">m</p>
+                </div>
+                {!freeMode && (
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-white/50">
+                      Restant
+                    </p>
+                    <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                      {nav ? nav.remainingKm.toFixed(1) : "--"}
+                    </p>
+                    <p className="text-xs text-white/40">km</p>
+                  </div>
                 )}
               </div>
 
-              {/* Bas : gros boutons tactiles */}
-              <div className="grid grid-cols-2 gap-3 pb-1">
+              {!freeMode && nav?.offTrack && (
+                <p className="text-center text-red-400 font-medium mt-3">
+                  ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
+                </p>
+              )}
+
+              {/* Commandes : Pause (secondaire) + Stop maintenu (principal) */}
+              <div className="mt-6 flex items-center gap-3">
                 <button
                   onClick={isPaused ? resumeTracking : pauseTracking}
-                  className="h-[clamp(4rem,10vh,5.5rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-xl font-semibold"
+                  className="h-16 w-16 shrink-0 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center"
+                  aria-label={isPaused ? "Reprendre" : "Pause"}
                 >
                   {isPaused ? (
-                    <><Play className="h-7 w-7" />Reprendre</>
+                    <Play className="h-7 w-7" />
                   ) : (
-                    <><Pause className="h-7 w-7" />Pause</>
+                    <Pause className="h-7 w-7" />
                   )}
                 </button>
                 <button
-                  onClick={handleStop}
-                  className="h-[clamp(4rem,10vh,5.5rem)] rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-xl font-semibold"
+                  onPointerDown={startHold}
+                  onPointerUp={cancelHold}
+                  onPointerLeave={cancelHold}
+                  onPointerCancel={cancelHold}
+                  className="relative flex-1 h-16 rounded-full bg-red-600/90 overflow-hidden flex items-center justify-center text-lg font-semibold select-none touch-none"
                 >
-                  <Navigation className="h-7 w-7" />
-                  Stop
+                  <span
+                    className="absolute inset-y-0 left-0 bg-red-500"
+                    style={{ width: `${holdProgress * 100}%` }}
+                  />
+                  <span className="relative flex items-center gap-2">
+                    <Navigation className="h-6 w-6" />
+                    {holdProgress > 0 ? "Maintenez…" : "Maintenir pour arrêter"}
+                  </span>
                 </button>
               </div>
             </div>
