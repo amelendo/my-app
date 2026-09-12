@@ -497,7 +497,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-sm uppercase tracking-widest text-white/50">
                       Distance
                     </p>
-                    <p className="text-7xl font-bold tabular-nums leading-none mt-2">
+                    <p className="text-[clamp(3rem,15vw,5rem)] font-bold tabular-nums leading-none mt-2">
                       {distanceDone.toFixed(2)}
                     </p>
                     <p className="text-white/50 mt-1">km</p>
@@ -506,7 +506,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-sm uppercase tracking-widest text-white/50">
                       Allure
                     </p>
-                    <p className="text-7xl font-bold tabular-nums leading-none mt-2">
+                    <p className="text-[clamp(3rem,15vw,5rem)] font-bold tabular-nums leading-none mt-2">
                       {formatPace(avgSpeed)}
                     </p>
                     <p className="text-white/50 mt-1">min/km</p>
@@ -518,7 +518,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       D+
                     </p>
-                    <p className="text-4xl font-semibold tabular-nums mt-1">
+                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
                       {Math.round(elevationDone)}
                     </p>
                   </div>
@@ -526,7 +526,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       Durée
                     </p>
-                    <p className="text-4xl font-semibold tabular-nums mt-1">
+                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
                       {formatDuration(getMovingMs())}
                     </p>
                   </div>
@@ -534,7 +534,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                     <p className="text-xs uppercase tracking-wide text-white/50">
                       {freeMode ? "Vitesse" : "Restant"}
                     </p>
-                    <p className="text-4xl font-semibold tabular-nums mt-1">
+                    <p className="text-[clamp(1.5rem,7vw,2.5rem)] font-semibold tabular-nums mt-1">
                       {freeMode
                         ? avgSpeed.toFixed(1)
                         : nav
@@ -555,7 +555,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
               <div className="grid grid-cols-2 gap-3 pb-1">
                 <button
                   onClick={isPaused ? resumeTracking : pauseTracking}
-                  className="h-20 rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-xl font-semibold"
+                  className="h-[clamp(4rem,10vh,5.5rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center gap-2 text-xl font-semibold"
                 >
                   {isPaused ? (
                     <><Play className="h-7 w-7" />Reprendre</>
@@ -565,7 +565,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </button>
                 <button
                   onClick={handleStop}
-                  className="h-20 rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-xl font-semibold"
+                  className="h-[clamp(4rem,10vh,5.5rem)] rounded-2xl bg-red-600 hover:bg-red-500 active:bg-red-700 flex items-center justify-center gap-2 text-xl font-semibold"
                 >
                   <Navigation className="h-7 w-7" />
                   Stop
@@ -574,6 +574,19 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
             </div>
           )}
 
+          {/* En course : seulement la bascule Données, bien visible */}
+          {raceMode && view === "map" && (
+            <button
+              onClick={() => setView("data")}
+              className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-full bg-[#0f172a] text-white px-5 py-3 text-base font-semibold shadow-lg"
+            >
+              <Gauge className="h-5 w-5" />
+              Données
+            </button>
+          )}
+
+          {/* Avant le départ : carte de contrôle complète */}
+          {!raceMode && (
           <div className="absolute top-4 left-4 z-10 w-64 sm:w-72 max-w-[calc(100%-2rem)]">
             <Card className="p-4 bg-card/95 space-y-2.5">
               <h3 className="font-semibold text-sm">
@@ -589,18 +602,6 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 <Navigation className="h-4 w-4 mr-2" />
                 {isTracking ? "Stop" : "Start"}
               </Button>
-
-              {raceMode && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setView("data")}
-                >
-                  <Gauge className="h-4 w-4 mr-2" />
-                  Données
-                </Button>
-              )}
 
               {isTracking && (
                 <Button
@@ -818,6 +819,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
               )}
             </Card>
           </div>
+          )}
 
           {/* Barre de progression en bas de carte */}
           {isTracking && nav && (
