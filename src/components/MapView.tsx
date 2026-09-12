@@ -6,7 +6,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { TrackPoint } from "@/utils/gpxParser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Navigation, AlertTriangle, Download, X, Upload, Pause, Play, Map as MapIcon, Gauge } from "lucide-react";
+import { Navigation, AlertTriangle, Download, X, Upload, Pause, Play, Map as MapIcon, Gauge, Square } from "lucide-react";
 import { exportToGpx } from "@/utils/exportGpx";
 import { useTracker } from "@/hooks/useTracker";
 import { computeNavInfo, type NavInfo } from "@/utils/navigation";
@@ -485,14 +485,14 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           <div ref={mapContainer} className="absolute inset-0" />
 
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
-          {/* Vue DONNÉES — hiérarchie type app de course */}
+          {/* Vue DONNÉES — centrée sur l'action (Pause / Stop / Carte) */}
           {raceMode && view === "data" && (
             <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
-              {/* Haut : statut + bascule Carte */}
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-sm">
+              {/* Statut discret en haut */}
+              <div className="flex justify-center pb-2">
+                <span className="flex items-center gap-2 text-xs text-white/60">
                   <span
-                    className={`inline-block h-3 w-3 rounded-full ${
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
                       isPaused
                         ? "bg-amber-400"
                         : wakeActive
@@ -500,112 +500,95 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                         : "bg-red-400"
                     }`}
                   />
-                  <span className="text-white/70">
-                    {isPaused ? "En pause" : wakeActive ? "Actif" : "Écran ?"}
-                  </span>
+                  {isPaused ? "En pause" : wakeActive ? "Écran actif" : "Écran non maintenu"}
                 </span>
-                <button
-                  onClick={() => {
-                    setView("map");
-                    setTimeout(() => map.current?.resize(), 100);
-                  }}
-                  className="flex items-center gap-2 rounded-full bg-white/15 hover:bg-white/25 px-4 py-2 text-sm font-semibold"
-                >
-                  <MapIcon className="h-5 w-5" />
-                  Carte
-                </button>
               </div>
 
-              {/* Chiffre roi : le chrono */}
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <p className="text-sm uppercase tracking-[0.2em] text-white/50">
-                  Durée
-                </p>
-                <p className="text-[clamp(4rem,22vw,7rem)] font-bold tabular-nums leading-none mt-1">
-                  {formatDuration(getMovingMs())}
-                </p>
-              </div>
-
-              {/* Métriques secondaires */}
-              <div
-                className={`grid ${
-                  freeMode ? "grid-cols-3" : "grid-cols-2"
-                } gap-y-6 gap-x-4 text-center border-t border-white/10 pt-6`}
-              >
+              {/* Chiffres — répartis sur toute la zone, boutons en bas */}
+              <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-x-4 place-items-center text-center py-2">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-white/50">
-                    Distance
+                  <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
+                  <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
+                    {formatDuration(getMovingMs())}
                   </p>
-                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-white/50">Distance</p>
+                  <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
                     {distanceDone.toFixed(2)}
                   </p>
-                  <p className="text-xs text-white/40">km</p>
+                  <p className="text-xs text-white/40 -mt-1">km</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-white/50">
-                    Allure
-                  </p>
-                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
+                  <p className="text-xs uppercase tracking-wide text-white/50">Allure</p>
+                  <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
                     {formatPace(avgSpeed)}
                   </p>
-                  <p className="text-xs text-white/40">min/km</p>
+                  <p className="text-xs text-white/40 -mt-1">min/km</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-white/50">
-                    D+
+                    {freeMode ? "D+" : "Restant"}
                   </p>
-                  <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
-                    {Math.round(elevationDone)}
+                  <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
+                    {freeMode
+                      ? Math.round(elevationDone)
+                      : nav
+                      ? nav.remainingKm.toFixed(1)
+                      : "--"}
                   </p>
-                  <p className="text-xs text-white/40">m</p>
+                  <p className="text-xs text-white/40 -mt-1">
+                    {freeMode ? "m" : "km"}
+                  </p>
                 </div>
-                {!freeMode && (
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-white/50">
-                      Restant
-                    </p>
-                    <p className="text-[clamp(1.75rem,8vw,2.75rem)] font-semibold tabular-nums">
-                      {nav ? nav.remainingKm.toFixed(1) : "--"}
-                    </p>
-                    <p className="text-xs text-white/40">km</p>
-                  </div>
-                )}
               </div>
 
               {!freeMode && nav?.offTrack && (
-                <p className="text-center text-red-400 font-medium mt-3">
+                <p className="text-center text-red-400 font-medium -mt-2">
                   ⚠ Hors trace ({Math.round(nav.distanceToTrackM)} m)
                 </p>
               )}
 
-              {/* Commandes : Pause (secondaire) + Stop maintenu (principal) */}
-              <div className="mt-6 flex items-center gap-3">
+              {/* Trois boutons de taille identique, ancrés en bas */}
+              <div className="mt-auto grid grid-cols-3 gap-2">
                 <button
                   onClick={isPaused ? resumeTracking : pauseTracking}
-                  className="h-16 w-16 shrink-0 rounded-full bg-white/15 hover:bg-white/25 active:bg-white/30 flex items-center justify-center"
-                  aria-label={isPaused ? "Reprendre" : "Pause"}
+                  className="h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex flex-col items-center justify-center gap-1.5 font-semibold"
                 >
                   {isPaused ? (
-                    <Play className="h-7 w-7" />
+                    <Play className="h-8 w-8" />
                   ) : (
-                    <Pause className="h-7 w-7" />
+                    <Pause className="h-8 w-8" />
                   )}
+                  <span className="text-sm">{isPaused ? "Reprendre" : "Pause"}</span>
                 </button>
+
                 <button
                   onPointerDown={startHold}
                   onPointerUp={cancelHold}
                   onPointerLeave={cancelHold}
                   onPointerCancel={cancelHold}
-                  className="relative flex-1 h-16 rounded-full bg-red-600/90 overflow-hidden flex items-center justify-center text-lg font-semibold select-none touch-none"
+                  className="relative h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-red-600/90 overflow-hidden flex flex-col items-center justify-center gap-1.5 font-semibold select-none touch-none"
                 >
                   <span
-                    className="absolute inset-y-0 left-0 bg-red-500"
-                    style={{ width: `${holdProgress * 100}%` }}
+                    className="absolute inset-0 bg-red-500 origin-left"
+                    style={{ transform: `scaleX(${holdProgress})` }}
                   />
-                  <span className="relative flex items-center gap-2">
-                    <Navigation className="h-6 w-6" />
-                    {holdProgress > 0 ? "Maintenez…" : "Maintenir pour arrêter"}
+                  <Square className="relative h-8 w-8 fill-current" />
+                  <span className="relative text-sm">
+                    {holdProgress > 0 ? "Maintenez…" : "Stop"}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setView("map");
+                    setTimeout(() => map.current?.resize(), 100);
+                  }}
+                  className="h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex flex-col items-center justify-center gap-1.5 font-semibold"
+                >
+                  <MapIcon className="h-8 w-8" />
+                  <span className="text-sm">Carte</span>
                 </button>
               </div>
             </div>
