@@ -487,9 +487,9 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
           {/* Vue DONNÉES — centrée sur l'action (Pause / Stop / Carte) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
+            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col justify-center gap-8 p-5">
               {/* Statut discret en haut */}
-              <div className="flex justify-center pb-2">
+              <div className="flex justify-center">
                 <span className="flex items-center gap-2 text-xs text-white/60">
                   <span
                     className={`inline-block h-2.5 w-2.5 rounded-full ${
@@ -504,8 +504,8 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </span>
               </div>
 
-              {/* Chiffres — répartis sur toute la zone, boutons en bas */}
-              <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-x-4 place-items-center text-center py-2">
+              {/* Chiffres — bloc compact et centré */}
+              <div className="grid grid-cols-2 gap-6 text-center">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-white/50">Durée</p>
                   <p className="text-[clamp(2.25rem,11vw,3.5rem)] font-bold tabular-nums leading-tight">
@@ -549,8 +549,8 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
                 </p>
               )}
 
-              {/* Trois boutons de taille identique, ancrés en bas */}
-              <div className="mt-auto grid grid-cols-3 gap-2">
+              {/* Trois boutons de taille identique */}
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={isPaused ? resumeTracking : pauseTracking}
                   className="h-[clamp(5rem,13vh,7rem)] rounded-2xl bg-white/15 hover:bg-white/25 active:bg-white/30 flex flex-col items-center justify-center gap-1.5 font-semibold"
