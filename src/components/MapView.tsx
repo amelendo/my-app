@@ -209,8 +209,21 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
   const [raceMode, setRaceMode] = useState(false);
   const [view, setView] = useState<"data" | "map">("data"); // vue par défaut : données
   const [, setTick] = useState(0); // rafraîchit le chrono chaque seconde
+  const [viewportH, setViewportH] = useState<number | null>(null);
   const { session } = useAuth();
   const startedAtRef = useRef<number | null>(null);
+
+  // Hauteur réelle de la zone visible (fiable sur Chrome/Brave/Safari)
+  useEffect(() => {
+    const update = () => setViewportH(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
+  }, []);
 
   // Chrono : rafraîchit l'affichage chaque seconde pendant la course
   useEffect(() => {
@@ -520,8 +533,11 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           ref={mapWrapper}
           className={
             raceMode
-              ? "fixed inset-0 z-[100] h-[100dvh] overflow-hidden bg-background"
+              ? "fixed top-0 left-0 w-full z-[100] overflow-hidden bg-background"
               : "relative h-[600px] bg-background"
+          }
+          style={
+            raceMode && viewportH ? { height: `${viewportH}px` } : undefined
           }
         >
           <div ref={mapContainer} className="absolute inset-0" />
@@ -529,7 +545,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
           {/* Vue DONNÉES — centrée sur l'action (Pause / Stop / Carte) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 h-[100dvh] overflow-hidden bg-[#0f172a] text-white flex flex-col p-5">
+            <div className="absolute inset-0 z-20 overflow-hidden bg-[#0f172a] text-white flex flex-col p-5">
               {/* Statut, en haut */}
               <div className="flex justify-center shrink-0">
                 <span className="flex items-center gap-2 text-xs text-white/60">
