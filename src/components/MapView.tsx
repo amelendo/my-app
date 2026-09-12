@@ -273,6 +273,19 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
     return () => clearTimeout(t);
   }, [raceMode]);
 
+  // Bloque le défilement de la page pendant la course : le contenu normal
+  // (entête, etc.) reste sous l'écran plein écran et rendrait la page
+  // défilable (d'où les artefacts de capture défilante).
+  useEffect(() => {
+    if (raceMode) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [raceMode]);
+
   // Reprise d'une course interrompue : restaure le tracé et relance le suivi
   useEffect(() => {
     if (resumeInitial && resumeInitial.length > 1) {
@@ -489,7 +502,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           ref={mapWrapper}
           className={
             raceMode
-              ? "fixed inset-0 z-[100] bg-background"
+              ? "fixed inset-0 z-[100] h-[100dvh] overflow-hidden bg-background"
               : "relative h-[600px] bg-background"
           }
         >
@@ -498,7 +511,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
           {/* Vue DONNÉES (plein écran, par défaut pendant la course) */}
           {/* Vue DONNÉES — centrée sur l'action (Pause / Stop / Carte) */}
           {raceMode && view === "data" && (
-            <div className="absolute inset-0 z-20 bg-[#0f172a] text-white flex flex-col p-5">
+            <div className="absolute inset-0 z-20 h-[100dvh] overflow-hidden bg-[#0f172a] text-white flex flex-col p-5">
               {/* Statut, en haut */}
               <div className="flex justify-center shrink-0">
                 <span className="flex items-center gap-2 text-xs text-white/60">
