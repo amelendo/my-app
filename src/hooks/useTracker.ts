@@ -317,15 +317,26 @@ export function useTracker(setCurrentPosition?: (p: TrackPoint) => void) {
     (segStartRef.current ? Date.now() - segStartRef.current : 0);
 
   /* ------------------- Effets ------------------- */
-  // Réacquiert le wake lock quand l'app revient au premier plan
+  // Sauvegarde immédiate quand l'app passe en arrière-plan (bascule appareil
+  // photo, verrouillage…) — juste avant qu'Android puisse la suspendre/tuer.
+  // Réacquiert le wake lock au retour au premier plan.
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && isTracking && !isPaused) {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (isTracking) void savePath(pathRef.current);
+      } else if (isTracking && !isPaused) {
         void requestWakeLock();
       }
     };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    const onPageHide = () => {
+      if (isTracking) void savePath(pathRef.current);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [isTracking, isPaused]);
 
   // Réacquisition périodique : si le verrou a été relâché, on le reprend

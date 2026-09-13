@@ -97,7 +97,7 @@ export async function getActiveSession(): Promise<{
 } | null> {
   const db = await getDB();
   const rec = await db.get(SESSION, CURRENT);
-  if (rec && rec.active && rec.points.length > 1) {
+  if (rec && rec.active && rec.points.length >= 1) {
     return { points: rec.points, freeMode: rec.freeMode };
   }
   return null;

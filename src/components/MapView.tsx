@@ -319,7 +319,7 @@ const MapView = ({ track, trackName, resumeInitial }: MapViewProps) => {
 
   // Reprise d'une course interrompue : restaure le tracé et relance le suivi
   useEffect(() => {
-    if (resumeInitial && resumeInitial.length > 1) {
+    if (resumeInitial && resumeInitial.length >= 1) {
       startedAtRef.current = Date.now();
       resumeSession(resumeInitial);
       setRaceMode(true);
